@@ -2,40 +2,32 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chess</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Chess</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="top"><a href="index.html" class="btn">&larr; Games</a><span class="title">Chess</span></div>
+<div class="top"><a href="index.html">&larr; Games</a><span class="title">Chess</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (White)</button><button data-v="ai2">Vs Computer (Black)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
 <div id="status" class="status"></div>
-<div class="boardwrap"><canvas id="board"></canvas></div>
+<div id="board"></div>
 <div id="promo" class="promo" style="display:none">Promote to:
   <button data-p="Q">Queen</button><button data-p="R">Rook</button><button data-p="B">Bishop</button><button data-p="N">Knight</button>
 </div>
 <div class="controls">
-  <button id="newBtn">New game</button>
-  <button id="undoBtn">Undo</button>
-  <button id="flipBtn">Flip</button>
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button><button id="flipBtn">Flip Board</button>
 </div>
-<div class="controls">
-  <select id="mode">
-    <option value="ai1">You (White) vs computer</option>
-    <option value="ai2">You (Black) vs computer</option>
-    <option value="2p">2 players</option>
-  </select>
-  <select id="level">
-    <option value="1">Easy</option>
-    <option value="2">Medium</option>
-    <option value="3">Hard (slow)</option>
-  </select>
-  <select id="opt">
-    <option value="L">Letter pieces</option>
-    <option value="S">Symbol pieces</option>
-  </select>
+<div class="controls" id="opts">
+  Pieces: <button data-v="S">Symbols</button><button data-v="L">Letters</button>
 </div>
-<p class="help">Tap a piece, then tap where it should go. White pieces are white discs, Black pieces are black discs.
-K king, Q queen, R rook, B bishop, N knight, P pawn. Your game is saved automatically.</p>
+<div id="log" class="log"></div>
+<p class="help">Tap a piece, then tap a marked square. If the piece symbols show as boxes on your Kindle, choose
+&ldquo;Letters&rdquo;. Hard mode can take a while to think on a Kindle. Your game is saved automatically.</p>
 <script src="common.js"></script>
 <script>
 (function () {
@@ -45,7 +37,8 @@ K king, Q queen, R rook, B bishop, N knight, P pawn. Your game is saved automati
   var K_OFF = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
   var R_DIR = [[-1, 0], [1, 0], [0, -1], [0, 1]];
   var B_DIR = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
-  var SYM = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+  var SYM = { k: '&#9818;', q: '&#9819;', r: '&#9820;', b: '&#9821;', n: '&#9822;', p: '&#9823;' };
+  var WSYM = { k: '&#9812;', q: '&#9813;', r: '&#9814;', b: '&#9815;', n: '&#9816;', p: '&#9817;' };
 
   function isW(p) { return p !== '' && p === p.toUpperCase(); }
   function colorOf(p) { return p === '' ? '' : (isW(p) ? 'w' : 'b'); }
@@ -221,8 +214,7 @@ K king, Q queen, R rook, B bishop, N knight, P pawn. Your game is saved automati
   var R = {
     key: 'kg-chess',
     sides: ['w', 'b'],
-    aspect: 1,
-    defaultOpt: 'L',
+    defaultOpt: 'S',
     newState: newState,
     legal: legal,
     make: make,
@@ -260,72 +252,66 @@ K king, Q queen, R rook, B bishop, N knight, P pawn. Your game is saved automati
         };
       }
     },
-    hit: function (x, y, g) {
-      var sq = g.w / 8, c = Math.floor(x / sq), r = Math.floor(y / sq);
-      if (!inB(r, c)) return -1;
-      if (g.flip) { r = 7 - r; c = 7 - c; }
-      return r * 8 + c;
+    notate: function (s, m, ms) {
+      var p = s.b[m.f].toUpperCase(), cap = s.b[m.t] !== '' || (p === 'P' && m.t === s.ep), txt;
+      if (p === 'K' && Math.abs(m.t - m.f) === 2) txt = m.t > m.f ? 'O-O' : 'O-O-O';
+      else if (p === 'P') txt = (cap ? sqName(m.f).charAt(0) + 'x' : '') + sqName(m.t) + (m.p ? '=' + m.p : '');
+      else {
+        var amb = false, sameF = false, sameR = false;
+        for (var i = 0; i < ms.length; i++) {
+          var o = ms[i];
+          if (o.f !== m.f && o.t === m.t && s.b[o.f] === s.b[m.f]) {
+            amb = true;
+            if ((o.f & 7) === (m.f & 7)) sameF = true;
+            if ((o.f >> 3) === (m.f >> 3)) sameR = true;
+          }
+        }
+        var dis = !amb ? '' : (!sameF ? sqName(m.f).charAt(0) : (!sameR ? sqName(m.f).charAt(1) : sqName(m.f)));
+        txt = p + dis + (cap ? 'x' : '') + sqName(m.t);
+      }
+      var ns = m.ns || make(s, m);
+      if (inCheck(ns, ns.t)) txt += legal(ns).length ? '+' : '#';
+      return txt;
     },
-    draw: function (ctx, g, v) {
-      var sq = g.w / 8, i, r, c, x, y, p;
-      var kingSq = v.check ? findKing(v.s.b, v.s.t) : -1;
-      function pos(idx) {
-        var rr = idx >> 3, cc = idx & 7;
-        if (g.flip) { rr = 7 - rr; cc = 7 - cc; }
-        return [cc * sq, rr * sq];
-      }
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (i = 0; i < 64; i++) {
-        var xy = pos(i); x = xy[0]; y = xy[1];
-        r = i >> 3; c = i & 7;
-        ctx.fillStyle = i === kingSq ? '#444' : ((r + c) % 2 ? '#aaa' : '#fff');
-        ctx.fillRect(x, y, sq, sq);
-        if (v.last && (i === v.last.f || i === v.last.t)) {
-          ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-          ctx.strokeRect(x + 3, y + 3, sq - 6, sq - 6);
+    cols: 8,
+    rows: 8,
+    render: function (el, S, v) {
+      var h = ['<table class="grid chess">'], vr, vc, i, kingSq = v.check ? findKing(v.s.b, v.s.t) : -1;
+      var discSize = Math.round(S * 0.8), discOff = Math.round((S - discSize) / 2);
+      for (vr = 0; vr < 8; vr++) {
+        h.push('<tr>');
+        for (vc = 0; vc < 8; vc++) {
+          i = v.flip ? (7 - vr) * 8 + (7 - vc) : vr * 8 + vc;
+          var r = i >> 3, c = i & 7, p = v.s.b[i];
+          var cls = i === kingSq ? 'ck' : ((r + c) % 2 ? 'dk' : 'lt');
+          h.push('<td class="' + cls + '" data-sq="' + i + '"><div class="c" style="width:' + S + 'px;height:' + S + 'px">');
+          if (v.last && (i === v.last.f || i === v.last.t)) h.push('<div class="last"></div>');
+          if (vc === 0) h.push('<div class="coord" style="left:2px;top:2px">' + (8 - r) + '</div>');
+          if (vr === 7) h.push('<div class="coord" style="right:2px;bottom:2px">' + 'abcdefgh'.charAt(c) + '</div>');
+          if (p !== '') {
+            if (v.opt === 'L') {
+              h.push('<div class="disc ' + (isW(p) ? 'dw' : 'db') + '" style="left:' + discOff + 'px;top:' + discOff +
+                'px;width:' + discSize + 'px;height:' + discSize + 'px;line-height:' + (discSize - 6) +
+                'px;font-size:' + Math.round(S * 0.42) + 'px">' + p.toUpperCase() + '</div>');
+            } else {
+              var gl = isW(p) ? WSYM[p.toLowerCase()] : SYM[p];
+              h.push('<div class="pc" style="font-size:' + Math.round(S * 0.78) + 'px;line-height:' + S + 'px">' + gl + '</div>');
+            }
+          }
+          if (i === v.sel) h.push('<div class="sel"></div>');
+          if (v.targets[i]) {
+            if (p === '') {
+              var d = Math.round(S * 0.28);
+              h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) +
+                'px;width:' + d + 'px;height:' + d + 'px"></div>');
+            } else h.push('<div class="ring"></div>');
+          }
+          h.push('</div></td>');
         }
-        if (i === v.sel) {
-          ctx.strokeStyle = '#000'; ctx.lineWidth = 5;
-          ctx.strokeRect(x + 2.5, y + 2.5, sq - 5, sq - 5);
-        }
+        h.push('</tr>');
       }
-      ctx.font = Math.max(9, Math.floor(sq * 0.18)) + 'px sans-serif';
-      for (i = 0; i < 8; i++) {
-        var fileIdx = g.flip ? 7 - i : i, rankIdx = g.flip ? i : 7 - i;
-        ctx.fillStyle = '#000';
-        ctx.fillText('abcdefgh'.charAt(fileIdx), i * sq + sq * 0.88, 8 * sq - sq * 0.12);
-        ctx.fillText(String(rankIdx + 1), sq * 0.1, i * sq + sq * 0.14);
-      }
-      for (i = 0; i < 64; i++) {
-        p = v.s.b[i];
-        if (p === '') continue;
-        var pxy = pos(i), cx = pxy[0] + sq / 2, cy = pxy[1] + sq / 2, w = isW(p);
-        if (v.opt === 'S') {
-          ctx.font = Math.floor(sq * 0.82) + 'px "DejaVu Sans", "Arial Unicode MS", serif';
-          var gl = SYM[p.toLowerCase()];
-          ctx.fillStyle = w ? '#fff' : '#000';
-          ctx.fillText(gl, cx, cy + sq * 0.04);
-          ctx.lineWidth = w ? 1.5 : 1; ctx.strokeStyle = w ? '#000' : '#fff';
-          ctx.strokeText(gl, cx, cy + sq * 0.04);
-        } else {
-          KG.circle(ctx, cx, cy, sq * 0.4, w ? '#fff' : '#000', '#000', 2);
-          if (!w) KG.circle(ctx, cx, cy, sq * 0.34, null, '#fff', 1);
-          ctx.font = 'bold ' + Math.floor(sq * 0.46) + 'px Georgia, serif';
-          ctx.fillStyle = w ? '#000' : '#fff';
-          ctx.fillText(p.toUpperCase(), cx, cy + sq * 0.03);
-        }
-      }
-      for (i = 0; i < v.targets.length; i++) {
-        var t = v.targets[i], txy = pos(t), tx = txy[0] + sq / 2, ty = txy[1] + sq / 2;
-        if (v.s.b[t] === '') {
-          KG.circle(ctx, tx, ty, sq * 0.13, '#000', '#fff', 2);
-        } else {
-          KG.circle(ctx, tx, ty, sq * 0.47, null, '#000', 4);
-        }
-      }
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-      ctx.strokeRect(1, 1, g.w - 2, g.h - 2);
+      h.push('</table>');
+      el.innerHTML = h.join('');
     }
   };
 

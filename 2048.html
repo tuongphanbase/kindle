@@ -2,26 +2,28 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2048</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle 2048</title>
 <link rel="stylesheet" href="style.css">
 <style>
   .pad { text-align: center; margin: 6px 0; }
   .pad button { width: 90px; height: 64px; font-size: 26px; font-weight: bold; }
   .pad .mid { display: inline-block; width: 90px; }
+  .t48 { border-collapse: separate; border-spacing: 5px; background: #000; margin: 0 auto; }
+  .t48 td { text-align: center; vertical-align: middle; font-weight: bold; padding: 0; }
 </style>
 </head>
 <body>
-<div class="top"><a href="index.html" class="btn">&larr; Games</a><span class="title">2048</span></div>
+<div class="top"><a href="index.html">&larr; Games</a><span class="title">2048</span></div>
 <div id="status" class="status"></div>
-<div class="boardwrap"><canvas id="board"></canvas></div>
+<div id="board"></div>
 <div class="pad">
   <button id="up">&uarr;</button><br>
   <button id="left">&larr;</button><span class="mid"></span><button id="right">&rarr;</button><br>
   <button id="down">&darr;</button>
 </div>
 <div class="controls">
-  <button id="newBtn">New game</button>
+  <button id="newBtn">New Game</button>
   <button id="undoBtn">Undo</button>
 </div>
 <p class="help">Use the arrow buttons (or swipe on the board) to slide all tiles. Equal tiles merge. Reach 2048!
@@ -32,7 +34,7 @@ Your game is saved automatically.</p>
   var KEY = 'kg-2048';
   var saved = KG.load(KEY) || {};
   var g = saved.g || null, best = saved.best || 0, prev = saved.prev || null;
-  var canvas = KG.$('board'), statusEl = KG.$('status');
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
 
   function empty() { var c = []; for (var i = 0; i < 16; i++) c.push(0); return c; }
   function addTile(cells) {
@@ -91,26 +93,24 @@ Your game is saved automatically.</p>
     var txt = 'Score: ' + g.score + '   Best: ' + best;
     if (over) txt += ' — Game over!';
     else if (g.won && !g.keepGoing) { txt += ' — You made 2048!'; g.keepGoing = true; }
-    statusEl.innerHTML = '';
-    statusEl.appendChild(document.createTextNode(txt));
+    KG.text(statusEl, txt);
 
-    var w = Math.min((window.innerWidth || 600) - 20, (window.innerHeight || 800) - 330, 560);
-    w = Math.max(220, Math.floor(w));
-    var ctx = KG.setupCanvas(canvas, w, w);
-    var gap = Math.max(4, Math.floor(w / 60)), cell = (w - gap * 5) / 4;
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, w);
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var w = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 400, 520);
+    var cell = Math.floor((Math.max(200, w) - 25) / 4);
+    var h = ['<table class="t48">'];
     for (var i = 0; i < 16; i++) {
-      var v = g.cells[i], x = gap + (i % 4) * (cell + gap), y = gap + Math.floor(i / 4) * (cell + gap);
-      var lvl = v ? Math.round(Math.log(v) / Math.LN2) : 0; // 1..11+
-      var bg = !v ? '#888' : (lvl <= 2 ? '#fff' : (lvl <= 4 ? '#ddd' : (lvl <= 6 ? '#bbb' : (lvl <= 8 ? '#555' : '#222'))));
-      ctx.fillStyle = bg; ctx.fillRect(x, y, cell, cell);
-      if (!v) continue;
+      var v = g.cells[i];
+      var lvl = v ? Math.round(Math.log(v) / Math.LN2) : 0;
+      var bg = !v ? '#999' : (lvl <= 2 ? '#fff' : (lvl <= 4 ? '#ddd' : (lvl <= 6 ? '#bbb' : (lvl <= 8 ? '#555' : '#222'))));
       var digits = String(v).length;
-      ctx.fillStyle = lvl <= 6 ? '#000' : '#fff';
-      ctx.font = 'bold ' + Math.floor(cell * (digits <= 2 ? 0.5 : digits === 3 ? 0.4 : 0.3)) + 'px Georgia, serif';
-      ctx.fillText(String(v), x + cell / 2, y + cell / 2 + 2);
+      var fs = Math.floor(cell * (digits <= 2 ? 0.5 : digits === 3 ? 0.4 : 0.3));
+      if (i % 4 === 0) h.push('<tr>');
+      h.push('<td style="width:' + cell + 'px;height:' + cell + 'px;background:' + bg + ';color:' + (lvl <= 6 ? '#000' : '#fff') +
+        ';font-size:' + fs + 'px">' + (v ? v : '') + '</td>');
+      if (i % 4 === 3) h.push('</tr>');
     }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
     KG.save(KEY, { g: g, best: best, prev: prev });
   }
 
@@ -132,12 +132,12 @@ Your game is saved automatically.</p>
     if (map[k] !== undefined) { move(map[k]); if (e.preventDefault) e.preventDefault(); return false; }
   };
   var sx = null, sy = null;
-  canvas.addEventListener('touchstart', function (e) {
+  boardEl.addEventListener('touchstart', function (e) {
     if (e.touches.length !== 1) return;
     sx = e.touches[0].clientX; sy = e.touches[0].clientY;
     e.preventDefault();
   }, false);
-  canvas.addEventListener('touchend', function (e) {
+  boardEl.addEventListener('touchend', function (e) {
     if (sx === null) return;
     var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
     sx = null;

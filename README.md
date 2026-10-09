@@ -6,7 +6,7 @@ Light games built for the Kindle web browser (and any other e-ink or low-power b
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
 - **2048**
 
-It's plain HTML, CSS and ES5 JavaScript with no build step and no external requests. The pages use high-contrast black-and-white graphics and large tap targets, and they save games in `localStorage`.
+It's plain HTML, CSS and ES5 JavaScript with no build step and no external requests. Boards are HTML tables, not canvas, so they work in the Kindle's basic browser. The pages are high-contrast black and white with large tap targets and no animations. Games save in `localStorage`, and chess and Chinese chess show a move log.
 
 ## Put it online (GitHub Pages)
 

@@ -1,4 +1,4 @@
-/* Shared helpers for the Kindle games. Plain ES5 for old Kindle browsers. */
+/* Shared helpers for the Kindle games. Plain ES5, DOM tables only (no canvas). */
 var KG = {};
 KG.INF = 1000000;
 KG.MATE = 100000;
@@ -10,30 +10,40 @@ KG.save = function (key, v) {
   try { window.localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
 };
 KG.$ = function (id) { return document.getElementById(id); };
-
-KG.setupCanvas = function (canvas, w, h) {
-  var d = window.devicePixelRatio || 1;
-  canvas.width = Math.round(w * d);
-  canvas.height = Math.round(h * d);
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  var ctx = canvas.getContext('2d');
-  ctx.setTransform(d, 0, 0, d, 0, 0);
-  return ctx;
-};
-
-KG.circle = function (ctx, x, y, r, fill, stroke, lw) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2, false);
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
-};
+KG.text = function (el, txt) { el.innerHTML = ''; el.appendChild(document.createTextNode(txt)); };
 
 KG.shuffle = function (a) {
   for (var i = a.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t;
   }
   return a;
+};
+
+/* Find the element carrying data-sq (or other attr) from a click event. */
+KG.attrFromEvent = function (e, root, attr) {
+  e = e || window.event;
+  var t = e.target || e.srcElement;
+  while (t && t !== root) {
+    if (t.getAttribute && t.getAttribute(attr) !== null) return t.getAttribute(attr);
+    t = t.parentNode;
+  }
+  return null;
+};
+
+/* A row of buttons acting like radio buttons. */
+KG.buttonGroup = function (id, value, onPick) {
+  var el = KG.$(id), btns = el.getElementsByTagName('button');
+  function mark(v) {
+    for (var i = 0; i < btns.length; i++) btns[i].className = btns[i].getAttribute('data-v') === v ? 'on' : '';
+  }
+  el.onclick = function (e) {
+    var v = KG.attrFromEvent(e, el, 'data-v');
+    if (v === null) return;
+    mark(v);
+    onPick(v);
+  };
+  mark(value);
+  return el;
 };
 
 /* ---- Generic alpha-beta search. R is a rules object. ---- */
@@ -85,53 +95,49 @@ KG.best = function (R, s, level) {
   var best = ms[0], bv = -KG.INF, alpha = -KG.INF;
   for (var i = 0; i < ms.length; i++) {
     var v;
-    if (easy) {
-      v = -KG.search(R, ms[i].ns, depth - 1, -KG.INF, KG.INF, 1) + Math.random() * 120;
-    } else {
-      v = -KG.search(R, ms[i].ns, depth - 1, -KG.INF, -alpha, 1);
-    }
+    if (easy) v = -KG.search(R, ms[i].ns, 0, -KG.INF, KG.INF, 1) + Math.random() * 120;
+    else v = -KG.search(R, ms[i].ns, depth - 1, -KG.INF, -alpha, 1);
     if (v > bv) { bv = v; best = ms[i]; }
     if (v > alpha) alpha = v;
   }
   return best;
 };
 
-/* ---- Shared game screen controller ---- */
+/* ---- Shared board-game screen controller ---- */
 KG.Game = function (R) {
-  var canvas = KG.$('board'), statusEl = KG.$('status');
-  var modeEl = KG.$('mode'), levelEl = KG.$('level'), optEl = KG.$('opt');
+  var boardEl = KG.$('board'), statusEl = KG.$('status'), logEl = KG.$('log');
   var saved = KG.load(R.key) || {};
   var st = {
     s: saved.s || R.newState(),
     hist: saved.hist || [],
+    log: saved.log || [],
     last: saved.last || null,
     mode: saved.mode || 'ai1',
     level: saved.level || '2',
     flip: !!saved.flip,
     opt: saved.opt || R.defaultOpt
   };
-  var sel = -1, moves = [], result = null, thinking = false, geo = null;
-
-  modeEl.value = st.mode; levelEl.value = st.level; optEl.value = st.opt;
+  var sel = -1, moves = [], result = null, thinking = false;
 
   function human() { return st.mode === 'ai2' ? R.sides[1] : R.sides[0]; }
   function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !result; }
-  function viewFlip() { return (st.mode === 'ai2') !== st.flip; }
 
   function save() {
-    KG.save(R.key, { s: st.s, hist: st.hist, last: st.last, mode: st.mode, level: st.level, flip: st.flip, opt: st.opt });
+    KG.save(R.key, { s: st.s, hist: st.hist, log: st.log, last: st.last, mode: st.mode,
+      level: st.level, flip: st.flip, opt: st.opt });
   }
 
   function draw() {
-    var reserve = 250;
-    var w = Math.min((window.innerWidth || 600) - 20, ((window.innerHeight || 800) - reserve) / R.aspect, 760);
-    w = Math.max(240, Math.floor(w));
-    var h = Math.floor(w * R.aspect);
-    var ctx = KG.setupCanvas(canvas, w, h);
-    var targets = [];
-    for (var i = 0; i < moves.length; i++) if (moves[i].f === sel) targets.push(moves[i].t);
-    geo = { w: w, h: h, flip: viewFlip() };
-    R.draw(ctx, geo, { s: st.s, sel: sel, targets: targets, last: st.last, opt: st.opt, check: R.inCheck(st.s, st.s.t) });
+    var w = Math.min((window.innerWidth || 600) - 24, 760);
+    var h = (window.innerHeight || 800) - 300;
+    var cell = Math.floor(Math.min(w / R.cols, h / R.rows));
+    cell = Math.max(28, cell);
+    var targets = {};
+    for (var i = 0; i < moves.length; i++) if (moves[i].f === sel) targets[moves[i].t] = 1;
+    R.render(boardEl, cell, {
+      s: st.s, sel: sel, targets: targets, last: st.last, opt: st.opt,
+      flip: (st.mode === 'ai2') !== st.flip, check: R.inCheck(st.s, st.s.t)
+    });
   }
 
   function setStatus() {
@@ -141,18 +147,26 @@ KG.Game = function (R) {
     else {
       txt = R.sideName(st.s.t) + ' to move';
       if (st.mode !== '2p') txt += st.s.t === human() ? ' (you)' : ' (computer)';
-      if (R.inCheck(st.s, st.s.t)) txt = 'Check! ' + txt;
+      if (R.inCheck(st.s, st.s.t)) txt += ' — CHECK';
     }
-    if (st.last && !thinking) txt += ' — last: ' + R.moveText(st.last);
-    statusEl.innerHTML = '';
-    statusEl.appendChild(document.createTextNode(txt));
+    KG.text(statusEl, txt);
+  }
+
+  function drawLog() {
+    var parts = [];
+    for (var i = 0; i < st.log.length; i++) {
+      parts.push((i % 2 === 0 ? (i / 2 + 1) + '. ' : '') + st.log[i]);
+    }
+    KG.text(logEl, parts.join('  '));
   }
 
   function refresh() {
     moves = R.legal(st.s);
     result = R.result(st.s, moves);
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
     setStatus();
     draw();
+    drawLog();
     save();
     if (computersTurn() && !thinking) {
       thinking = true;
@@ -167,9 +181,10 @@ KG.Game = function (R) {
   }
 
   function play(m) {
+    st.log.push(R.notate(st.s, m, moves));
     st.hist.push({ s: st.s, last: st.last });
     st.s = m.ns || R.make(st.s, m);
-    st.last = { f: m.f, t: m.t, p: m.p || '' };
+    st.last = { f: m.f, t: m.t };
     sel = -1;
     if (R.cancelChoose) R.cancelChoose();
     refresh();
@@ -188,31 +203,30 @@ KG.Game = function (R) {
     draw();
   }
 
-  canvas.onclick = function (e) {
-    e = e || window.event;
-    var r = canvas.getBoundingClientRect();
-    tap(R.hit(e.clientX - r.left, e.clientY - r.top, geo));
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v !== null) tap(parseInt(v, 10));
   };
 
   KG.$('newBtn').onclick = function () {
     if (thinking) return;
     if (st.hist.length && !result && !window.confirm('Start a new game?')) return;
-    st.s = R.newState(); st.hist = []; st.last = null; sel = -1;
+    st.s = R.newState(); st.hist = []; st.log = []; st.last = null; sel = -1;
     refresh();
   };
   KG.$('undoBtn').onclick = function () {
     if (thinking || !st.hist.length) return;
     do {
       var h = st.hist.pop();
-      st.s = h.s; st.last = h.last;
+      st.s = h.s; st.last = h.last; st.log.pop();
     } while (st.mode !== '2p' && st.hist.length && st.s.t !== human());
     sel = -1;
     refresh();
   };
   KG.$('flipBtn').onclick = function () { st.flip = !st.flip; draw(); save(); };
-  modeEl.onchange = function () { st.mode = modeEl.value; st.flip = false; sel = -1; refresh(); };
-  levelEl.onchange = function () { st.level = levelEl.value; save(); };
-  optEl.onchange = function () { st.opt = optEl.value; draw(); save(); };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; st.flip = false; sel = -1; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; save(); });
+  KG.buttonGroup('opts', st.opt, function (v) { st.opt = v; draw(); save(); });
   window.onresize = function () { draw(); };
 
   refresh();
