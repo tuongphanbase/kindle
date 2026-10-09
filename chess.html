@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html" class="btn">&larr; Games</a><span class="title">Chess</span></div>
+<div id="status" class="status"></div>
+<div class="boardwrap"><canvas id="board"></canvas></div>
+<div id="promo" class="promo" style="display:none">Promote to:
+  <button data-p="Q">Queen</button><button data-p="R">Rook</button><button data-p="B">Bishop</button><button data-p="N">Knight</button>
+</div>
+<div class="controls">
+  <button id="newBtn">New game</button>
+  <button id="undoBtn">Undo</button>
+  <button id="flipBtn">Flip</button>
+</div>
+<div class="controls">
+  <select id="mode">
+    <option value="ai1">You (White) vs computer</option>
+    <option value="ai2">You (Black) vs computer</option>
+    <option value="2p">2 players</option>
+  </select>
+  <select id="level">
+    <option value="1">Easy</option>
+    <option value="2">Medium</option>
+    <option value="3">Hard (slow)</option>
+  </select>
+  <select id="opt">
+    <option value="L">Letter pieces</option>
+    <option value="S">Symbol pieces</option>
+  </select>
+</div>
+<p class="help">Tap a piece, then tap where it should go. White pieces are white discs, Black pieces are black discs.
+K king, Q queen, R rook, B bishop, N knight, P pawn. Your game is saved automatically.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var START = 'rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR';
+  var VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+  var N_OFF = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+  var K_OFF = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  var R_DIR = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  var B_DIR = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  var SYM = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+
+  function isW(p) { return p !== '' && p === p.toUpperCase(); }
+  function colorOf(p) { return p === '' ? '' : (isW(p) ? 'w' : 'b'); }
+  function inB(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+  function sqName(i) { return 'abcdefgh'.charAt(i & 7) + (8 - (i >> 3)); }
+
+  function newState() {
+    var b = [];
+    for (var i = 0; i < 64; i++) { var ch = START.charAt(i); b.push(ch === '.' ? '' : ch); }
+    return { b: b, t: 'w', c: 'KQkq', ep: -1, hm: 0 };
+  }
+
+  function attacked(b, sq, by) {
+    var r = sq >> 3, c = sq & 7, w = by === 'w', i, rr, cc, p, d;
+    var pr = w ? r + 1 : r - 1, pp = w ? 'P' : 'p';
+    if (pr >= 0 && pr < 8) {
+      if (c > 0 && b[pr * 8 + c - 1] === pp) return true;
+      if (c < 7 && b[pr * 8 + c + 1] === pp) return true;
+    }
+    var n = w ? 'N' : 'n', k = w ? 'K' : 'k', rk = w ? 'R' : 'r', bs = w ? 'B' : 'b', q = w ? 'Q' : 'q';
+    for (i = 0; i < 8; i++) {
+      rr = r + N_OFF[i][0]; cc = c + N_OFF[i][1];
+      if (inB(rr, cc) && b[rr * 8 + cc] === n) return true;
+      rr = r + K_OFF[i][0]; cc = c + K_OFF[i][1];
+      if (inB(rr, cc) && b[rr * 8 + cc] === k) return true;
+    }
+    for (i = 0; i < 4; i++) {
+      d = R_DIR[i]; rr = r + d[0]; cc = c + d[1];
+      while (inB(rr, cc)) {
+        p = b[rr * 8 + cc];
+        if (p !== '') { if (p === rk || p === q) return true; break; }
+        rr += d[0]; cc += d[1];
+      }
+      d = B_DIR[i]; rr = r + d[0]; cc = c + d[1];
+      while (inB(rr, cc)) {
+        p = b[rr * 8 + cc];
+        if (p !== '') { if (p === bs || p === q) return true; break; }
+        rr += d[0]; cc += d[1];
+      }
+    }
+    return false;
+  }
+
+  function findKing(b, col) {
+    var k = col === 'w' ? 'K' : 'k';
+    for (var i = 0; i < 64; i++) if (b[i] === k) return i;
+    return -1;
+  }
+  function inCheck(s, col) { return attacked(s.b, findKing(s.b, col), col === 'w' ? 'b' : 'w'); }
+
+  function addPawn(ms, f, t, promo) {
+    if (promo) { ms.push({ f: f, t: t, p: 'Q' }); ms.push({ f: f, t: t, p: 'R' }); ms.push({ f: f, t: t, p: 'B' }); ms.push({ f: f, t: t, p: 'N' }); }
+    else ms.push({ f: f, t: t });
+  }
+
+  function pseudo(s, capOnly) {
+    var b = s.b, t = s.t, ms = [], i, j, d, rr, cc, to, q;
+    for (i = 0; i < 64; i++) {
+      var p = b[i];
+      if (p === '' || colorOf(p) !== t) continue;
+      var r = i >> 3, c = i & 7, u = p.toUpperCase();
+      if (u === 'P') {
+        var dir = t === 'w' ? -1 : 1, start = t === 'w' ? 6 : 1, last = t === 'w' ? 0 : 7, r1 = r + dir;
+        if (r1 < 0 || r1 > 7) continue;
+        if ((!capOnly || r1 === last) && b[r1 * 8 + c] === '') {
+          addPawn(ms, i, r1 * 8 + c, r1 === last);
+          if (!capOnly && r === start && b[(r1 + dir) * 8 + c] === '') ms.push({ f: i, t: (r1 + dir) * 8 + c });
+        }
+        for (j = -1; j <= 1; j += 2) {
+          cc = c + j;
+          if (cc < 0 || cc > 7) continue;
+          to = r1 * 8 + cc;
+          if ((b[to] !== '' && colorOf(b[to]) !== t) || to === s.ep) addPawn(ms, i, to, r1 === last);
+        }
+      } else if (u === 'N' || u === 'K') {
+        var offs = u === 'N' ? N_OFF : K_OFF;
+        for (j = 0; j < 8; j++) {
+          rr = r + offs[j][0]; cc = c + offs[j][1];
+          if (!inB(rr, cc)) continue;
+          q = b[rr * 8 + cc];
+          if (q === '' ? !capOnly : colorOf(q) !== t) ms.push({ f: i, t: rr * 8 + cc });
+        }
+      } else {
+        var dirs = u === 'R' ? R_DIR : (u === 'B' ? B_DIR : R_DIR.concat(B_DIR));
+        for (j = 0; j < dirs.length; j++) {
+          d = dirs[j]; rr = r + d[0]; cc = c + d[1];
+          while (inB(rr, cc)) {
+            q = b[rr * 8 + cc];
+            if (q === '') { if (!capOnly) ms.push({ f: i, t: rr * 8 + cc }); }
+            else { if (colorOf(q) !== t) ms.push({ f: i, t: rr * 8 + cc }); break; }
+            rr += d[0]; cc += d[1];
+          }
+        }
+      }
+    }
+    if (!capOnly) {
+      var cs = s.c;
+      if (t === 'w' && b[60] === 'K' && !attacked(b, 60, 'b')) {
+        if (cs.indexOf('K') >= 0 && b[63] === 'R' && b[61] === '' && b[62] === '' && !attacked(b, 61, 'b') && !attacked(b, 62, 'b')) ms.push({ f: 60, t: 62 });
+        if (cs.indexOf('Q') >= 0 && b[56] === 'R' && b[59] === '' && b[58] === '' && b[57] === '' && !attacked(b, 59, 'b') && !attacked(b, 58, 'b')) ms.push({ f: 60, t: 58 });
+      }
+      if (t === 'b' && b[4] === 'k' && !attacked(b, 4, 'w')) {
+        if (cs.indexOf('k') >= 0 && b[7] === 'r' && b[5] === '' && b[6] === '' && !attacked(b, 5, 'w') && !attacked(b, 6, 'w')) ms.push({ f: 4, t: 6 });
+        if (cs.indexOf('q') >= 0 && b[0] === 'r' && b[3] === '' && b[2] === '' && b[1] === '' && !attacked(b, 3, 'w') && !attacked(b, 2, 'w')) ms.push({ f: 4, t: 2 });
+      }
+    }
+    return ms;
+  }
+
+  function make(s, m) {
+    var b = s.b.slice(), p = b[m.f], cap = b[m.t], t = s.t, u = p.toUpperCase(), ep = -1;
+    b[m.t] = p; b[m.f] = '';
+    if (u === 'P') {
+      if (m.t === s.ep && cap === '') { b[m.t + (t === 'w' ? 8 : -8)] = ''; cap = 'p'; }
+      if (Math.abs(m.t - m.f) === 16) ep = (m.t + m.f) / 2;
+      var tr = m.t >> 3;
+      if (tr === 0 || tr === 7) { var pr = m.p || 'Q'; b[m.t] = t === 'w' ? pr.toUpperCase() : pr.toLowerCase(); }
+    }
+    if (u === 'K' && Math.abs(m.t - m.f) === 2) {
+      if (m.t === 62) { b[61] = b[63]; b[63] = ''; }
+      else if (m.t === 58) { b[59] = b[56]; b[56] = ''; }
+      else if (m.t === 6) { b[5] = b[7]; b[7] = ''; }
+      else if (m.t === 2) { b[3] = b[0]; b[0] = ''; }
+    }
+    var c = s.c;
+    if (c) {
+      if (p === 'K') c = c.replace('K', '').replace('Q', '');
+      if (p === 'k') c = c.replace('k', '').replace('q', '');
+      if (m.f === 63 || m.t === 63) c = c.replace('K', '');
+      if (m.f === 56 || m.t === 56) c = c.replace('Q', '');
+      if (m.f === 7 || m.t === 7) c = c.replace('k', '');
+      if (m.f === 0 || m.t === 0) c = c.replace('q', '');
+    }
+    return { b: b, t: t === 'w' ? 'b' : 'w', c: c, ep: ep, hm: (u === 'P' || cap !== '') ? 0 : s.hm + 1 };
+  }
+
+  function legal(s) {
+    var ps = pseudo(s, false), out = [];
+    for (var i = 0; i < ps.length; i++) {
+      var ns = make(s, ps[i]);
+      if (!inCheck(ns, s.t)) { ps[i].ns = ns; out.push(ps[i]); }
+    }
+    return out;
+  }
+
+  function evaluateWhite(b) {
+    var score = 0, heavy = 0, i, p, r, c, u, v, sign, adv, cd;
+    for (i = 0; i < 64; i++) {
+      p = b[i];
+      if (p !== '' && p !== 'p' && p !== 'P' && p !== 'k' && p !== 'K') heavy += VAL[p.toLowerCase()];
+    }
+    var endgame = heavy < 1600;
+    for (i = 0; i < 64; i++) {
+      p = b[i];
+      if (p === '') continue;
+      r = i >> 3; c = i & 7; u = p.toLowerCase(); sign = isW(p) ? 1 : -1;
+      adv = isW(p) ? 7 - r : r;
+      cd = Math.abs(r - 3.5) + Math.abs(c - 3.5);
+      v = VAL[u];
+      if (u === 'p') v += adv * (endgame ? 12 : 6) + ((c === 3 || c === 4) && adv >= 2 ? 10 : 0);
+      else if (u === 'n') v += 20 - cd * 8;
+      else if (u === 'b') v += 10 - cd * 4;
+      else if (u === 'q') v += 6 - cd * 2;
+      else if (u === 'r') v += (adv === 6 ? 15 : 0);
+      else if (u === 'k') v += endgame ? 20 - cd * 8 : (adv === 0 ? 20 : -10 * adv) + ((c <= 2 || c >= 6) ? 15 : 0);
+      score += sign * v;
+    }
+    return score;
+  }
+
+  var promoEl = KG.$('promo');
+
+  var R = {
+    key: 'kg-chess',
+    sides: ['w', 'b'],
+    aspect: 1,
+    defaultOpt: 'L',
+    newState: newState,
+    legal: legal,
+    make: make,
+    captures: function (s) { return pseudo(s, true); },
+    inCheck: inCheck,
+    value: function (p) { return VAL[p.toLowerCase()] || 1000; },
+    evaluate: function (s) { var e = evaluateWhite(s.b); return s.t === 'w' ? e : -e; },
+    noMoves: function (s, ply) { return inCheck(s, s.t) ? -KG.MATE + ply : 0; },
+    sideName: function (t) { return t === 'w' ? 'White' : 'Black'; },
+    moveText: function (m) { return sqName(m.f) + '–' + sqName(m.t) + (m.p ? '=' + m.p : ''); },
+    result: function (s, ms) {
+      if (!ms.length) {
+        if (inCheck(s, s.t)) return 'Checkmate! ' + (s.t === 'w' ? 'Black' : 'White') + ' wins.';
+        return 'Stalemate — draw.';
+      }
+      if (s.hm >= 100) return 'Draw by 50-move rule.';
+      var minor = 0, other = 0;
+      for (var i = 0; i < 64; i++) {
+        var p = s.b[i].toLowerCase();
+        if (p === 'n' || p === 'b') minor++;
+        else if (p !== '' && p !== 'k') other++;
+      }
+      if (!other && minor <= 1) return 'Draw — not enough material.';
+      return null;
+    },
+    cancelChoose: function () { promoEl.style.display = 'none'; },
+    choose: function (cands, play) {
+      promoEl.style.display = 'block';
+      var btns = promoEl.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].onclick = function () {
+          var pc = this.getAttribute('data-p');
+          promoEl.style.display = 'none';
+          for (var j = 0; j < cands.length; j++) if (cands[j].p === pc) { play(cands[j]); return; }
+        };
+      }
+    },
+    hit: function (x, y, g) {
+      var sq = g.w / 8, c = Math.floor(x / sq), r = Math.floor(y / sq);
+      if (!inB(r, c)) return -1;
+      if (g.flip) { r = 7 - r; c = 7 - c; }
+      return r * 8 + c;
+    },
+    draw: function (ctx, g, v) {
+      var sq = g.w / 8, i, r, c, x, y, p;
+      var kingSq = v.check ? findKing(v.s.b, v.s.t) : -1;
+      function pos(idx) {
+        var rr = idx >> 3, cc = idx & 7;
+        if (g.flip) { rr = 7 - rr; cc = 7 - cc; }
+        return [cc * sq, rr * sq];
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (i = 0; i < 64; i++) {
+        var xy = pos(i); x = xy[0]; y = xy[1];
+        r = i >> 3; c = i & 7;
+        ctx.fillStyle = i === kingSq ? '#444' : ((r + c) % 2 ? '#aaa' : '#fff');
+        ctx.fillRect(x, y, sq, sq);
+        if (v.last && (i === v.last.f || i === v.last.t)) {
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+          ctx.strokeRect(x + 3, y + 3, sq - 6, sq - 6);
+        }
+        if (i === v.sel) {
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 5;
+          ctx.strokeRect(x + 2.5, y + 2.5, sq - 5, sq - 5);
+        }
+      }
+      ctx.font = Math.max(9, Math.floor(sq * 0.18)) + 'px sans-serif';
+      for (i = 0; i < 8; i++) {
+        var fileIdx = g.flip ? 7 - i : i, rankIdx = g.flip ? i : 7 - i;
+        ctx.fillStyle = '#000';
+        ctx.fillText('abcdefgh'.charAt(fileIdx), i * sq + sq * 0.88, 8 * sq - sq * 0.12);
+        ctx.fillText(String(rankIdx + 1), sq * 0.1, i * sq + sq * 0.14);
+      }
+      for (i = 0; i < 64; i++) {
+        p = v.s.b[i];
+        if (p === '') continue;
+        var pxy = pos(i), cx = pxy[0] + sq / 2, cy = pxy[1] + sq / 2, w = isW(p);
+        if (v.opt === 'S') {
+          ctx.font = Math.floor(sq * 0.82) + 'px "DejaVu Sans", "Arial Unicode MS", serif';
+          var gl = SYM[p.toLowerCase()];
+          ctx.fillStyle = w ? '#fff' : '#000';
+          ctx.fillText(gl, cx, cy + sq * 0.04);
+          ctx.lineWidth = w ? 1.5 : 1; ctx.strokeStyle = w ? '#000' : '#fff';
+          ctx.strokeText(gl, cx, cy + sq * 0.04);
+        } else {
+          KG.circle(ctx, cx, cy, sq * 0.4, w ? '#fff' : '#000', '#000', 2);
+          if (!w) KG.circle(ctx, cx, cy, sq * 0.34, null, '#fff', 1);
+          ctx.font = 'bold ' + Math.floor(sq * 0.46) + 'px Georgia, serif';
+          ctx.fillStyle = w ? '#000' : '#fff';
+          ctx.fillText(p.toUpperCase(), cx, cy + sq * 0.03);
+        }
+      }
+      for (i = 0; i < v.targets.length; i++) {
+        var t = v.targets[i], txy = pos(t), tx = txy[0] + sq / 2, ty = txy[1] + sq / 2;
+        if (v.s.b[t] === '') {
+          KG.circle(ctx, tx, ty, sq * 0.13, '#000', '#fff', 2);
+        } else {
+          KG.circle(ctx, tx, ty, sq * 0.47, null, '#000', 4);
+        }
+      }
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, g.w - 2, g.h - 2);
+    }
+  };
+
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+/* Plain, high-contrast styles for e-ink screens (Kindle Experimental Browser). */
+html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+body { font-family: Georgia, "Times New Roman", serif; font-size: 18px; line-height: 1.35; padding: 8px; }
+a { color: #000; }
+h1 { font-size: 28px; margin: 8px 0 4px; }
+.top { margin-bottom: 4px; }
+.top .title { font-size: 22px; font-weight: bold; margin-left: 8px; vertical-align: middle; }
+.btn, button, select {
+  font-family: inherit; font-size: 18px; color: #000; background: #fff;
+  border: 2px solid #000; border-radius: 6px; padding: 8px 12px; margin: 3px 2px;
+  min-height: 44px; text-decoration: none; display: inline-block; vertical-align: middle;
+}
+button:active, .btn:active { background: #000; color: #fff; }
+.status { font-size: 20px; font-weight: bold; min-height: 28px; margin: 4px 0; }
+.boardwrap { text-align: center; margin: 4px 0; }
+canvas { display: block; margin: 0 auto; }
+.controls { text-align: center; margin: 4px 0; }
+.controls label { white-space: nowrap; }
+.promo { text-align: center; font-weight: bold; margin: 4px 0; }
+.help { font-size: 16px; margin: 8px 0; }
+.games a.game {
+  display: block; border: 3px solid #000; border-radius: 10px; padding: 16px; margin: 12px 0;
+  text-decoration: none; font-size: 24px; font-weight: bold;
+}
+.games a.game span { display: block; font-size: 16px; font-weight: normal; margin-top: 4px; }

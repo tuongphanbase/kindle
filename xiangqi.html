@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chinese Chess</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html" class="btn">&larr; Games</a><span class="title">Chinese Chess</span></div>
+<div id="status" class="status"></div>
+<div class="boardwrap"><canvas id="board"></canvas></div>
+<div class="controls">
+  <button id="newBtn">New game</button>
+  <button id="undoBtn">Undo</button>
+  <button id="flipBtn">Flip</button>
+</div>
+<div class="controls">
+  <select id="mode">
+    <option value="ai1">You (Red) vs computer</option>
+    <option value="ai2">You (Black) vs computer</option>
+    <option value="2p">2 players</option>
+  </select>
+  <select id="level">
+    <option value="1">Easy</option>
+    <option value="2">Medium</option>
+    <option value="3">Hard (slow)</option>
+  </select>
+  <select id="opt">
+    <option value="C">Chinese pieces</option>
+    <option value="L">Letter pieces</option>
+  </select>
+</div>
+<p class="help">Tap a piece, then tap where it should go. Red pieces are white discs and move first; Black pieces are black discs.
+Letters: K general, A advisor, E elephant, H horse, R chariot, C cannon, P soldier. Your game is saved automatically.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var START =
+    'rheakaehr' + '.........' + '.c.....c.' + 'p.p.p.p.p' + '.........' +
+    '.........' + 'P.P.P.P.P' + '.C.....C.' + '.........' + 'RHEAKAEHR';
+  var VAL = { k: 0, a: 200, e: 200, h: 400, r: 900, c: 450, p: 100 };
+  var CN = { K: '帥', A: '仕', E: '相', H: '傌', R: '俥', C: '炮', P: '兵',
+             k: '將', a: '士', e: '象', h: '馬', r: '車', c: '砲', p: '卒' };
+  var ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  var DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  var HORSE = [[-2, -1], [-2, 1], [2, -1], [2, 1], [-1, -2], [1, -2], [-1, 2], [1, 2]];
+  var M = 0.6; // board margin in cell units
+
+  function inB(r, c) { return r >= 0 && r < 10 && c >= 0 && c < 9; }
+  function isRed(p) { return p !== '' && p === p.toUpperCase(); }
+  function side(p) { return p === '' ? '' : (isRed(p) ? 'r' : 'b'); }
+  function inPalace(r, c, t) { return c >= 3 && c <= 5 && (t === 'r' ? r >= 7 && r <= 9 : r >= 0 && r <= 2); }
+  function ownHalf(r, t) { return t === 'r' ? r >= 5 : r <= 4; }
+  function sgn(x) { return x > 0 ? 1 : (x < 0 ? -1 : 0); }
+  function sqName(i) { return 'abcdefghi'.charAt(i % 9) + (10 - Math.floor(i / 9)); }
+
+  function newState() {
+    var b = [];
+    for (var i = 0; i < 90; i++) { var ch = START.charAt(i); b.push(ch === '.' ? '' : ch); }
+    return { b: b, t: 'r', hm: 0 };
+  }
+
+  function pseudo(s, capOnly) {
+    var b = s.b, t = s.t, ms = [], i, j, d, nr, nc, q;
+    function add(f, r2, c2) {
+      var to = r2 * 9 + c2, x = b[to];
+      if (x === '') { if (!capOnly) ms.push({ f: f, t: to }); }
+      else if (side(x) !== t) ms.push({ f: f, t: to });
+    }
+    for (i = 0; i < 90; i++) {
+      var p = b[i];
+      if (side(p) !== t) continue;
+      var r = Math.floor(i / 9), c = i % 9, u = p.toUpperCase();
+      if (u === 'K') {
+        for (j = 0; j < 4; j++) { nr = r + ORTH[j][0]; nc = c + ORTH[j][1]; if (inPalace(nr, nc, t)) add(i, nr, nc); }
+      } else if (u === 'A') {
+        for (j = 0; j < 4; j++) { nr = r + DIAG[j][0]; nc = c + DIAG[j][1]; if (inPalace(nr, nc, t)) add(i, nr, nc); }
+      } else if (u === 'E') {
+        for (j = 0; j < 4; j++) {
+          nr = r + 2 * DIAG[j][0]; nc = c + 2 * DIAG[j][1];
+          if (inB(nr, nc) && ownHalf(nr, t) && b[(r + DIAG[j][0]) * 9 + c + DIAG[j][1]] === '') add(i, nr, nc);
+        }
+      } else if (u === 'H') {
+        for (j = 0; j < 8; j++) {
+          d = HORSE[j]; nr = r + d[0]; nc = c + d[1];
+          if (!inB(nr, nc)) continue;
+          var lr = r + (Math.abs(d[0]) === 2 ? d[0] / 2 : 0), lc = c + (Math.abs(d[1]) === 2 ? d[1] / 2 : 0);
+          if (b[lr * 9 + lc] === '') add(i, nr, nc);
+        }
+      } else if (u === 'R') {
+        for (j = 0; j < 4; j++) {
+          d = ORTH[j]; nr = r + d[0]; nc = c + d[1];
+          while (inB(nr, nc)) {
+            q = b[nr * 9 + nc];
+            if (q === '') { if (!capOnly) ms.push({ f: i, t: nr * 9 + nc }); }
+            else { if (side(q) !== t) ms.push({ f: i, t: nr * 9 + nc }); break; }
+            nr += d[0]; nc += d[1];
+          }
+        }
+      } else if (u === 'C') {
+        for (j = 0; j < 4; j++) {
+          d = ORTH[j]; nr = r + d[0]; nc = c + d[1];
+          var screen = false;
+          while (inB(nr, nc)) {
+            q = b[nr * 9 + nc];
+            if (!screen) {
+              if (q === '') { if (!capOnly) ms.push({ f: i, t: nr * 9 + nc }); }
+              else screen = true;
+            } else if (q !== '') {
+              if (side(q) !== t) ms.push({ f: i, t: nr * 9 + nc });
+              break;
+            }
+            nr += d[0]; nc += d[1];
+          }
+        }
+      } else if (u === 'P') {
+        nr = r + (t === 'r' ? -1 : 1);
+        if (inB(nr, c)) add(i, nr, c);
+        if (!ownHalf(r, t)) {
+          if (c > 0) add(i, r, c - 1);
+          if (c < 8) add(i, r, c + 1);
+        }
+      }
+    }
+    return ms;
+  }
+
+  // Is square sq (a general) attacked by side `by`? Includes the "flying general" rule.
+  function attacked(b, sq, by) {
+    var r = Math.floor(sq / 9), c = sq % 9, red = by === 'r', i, d, nr, nc, q;
+    var R = red ? 'R' : 'r', C = red ? 'C' : 'c', H = red ? 'H' : 'h', P = red ? 'P' : 'p', K = red ? 'K' : 'k';
+    for (i = 0; i < 4; i++) {
+      d = ORTH[i]; nr = r + d[0]; nc = c + d[1];
+      var found = 0;
+      while (inB(nr, nc)) {
+        q = b[nr * 9 + nc];
+        if (q !== '') {
+          if (found === 0) { if (q === R || q === K) return true; found = 1; }
+          else { if (q === C) return true; break; }
+        }
+        nr += d[0]; nc += d[1];
+      }
+    }
+    for (i = 0; i < 8; i++) {
+      d = HORSE[i]; nr = r + d[0]; nc = c + d[1];
+      if (!inB(nr, nc) || b[nr * 9 + nc] !== H) continue;
+      var lr = nr - (Math.abs(d[0]) === 2 ? sgn(d[0]) : 0), lc = nc - (Math.abs(d[1]) === 2 ? sgn(d[1]) : 0);
+      if (b[lr * 9 + lc] === '') return true;
+    }
+    var pr = red ? r + 1 : r - 1;
+    if (inB(pr, c) && b[pr * 9 + c] === P) return true;
+    if (red ? r <= 4 : r >= 5) {
+      if (c > 0 && b[r * 9 + c - 1] === P) return true;
+      if (c < 8 && b[r * 9 + c + 1] === P) return true;
+    }
+    return false;
+  }
+
+  function findKing(b, t) {
+    var k = t === 'r' ? 'K' : 'k';
+    for (var i = 0; i < 90; i++) if (b[i] === k) return i;
+    return -1;
+  }
+  function inCheck(s, t) { return attacked(s.b, findKing(s.b, t), t === 'r' ? 'b' : 'r'); }
+
+  function make(s, m) {
+    var b = s.b.slice(), cap = b[m.t];
+    b[m.t] = b[m.f]; b[m.f] = '';
+    return { b: b, t: s.t === 'r' ? 'b' : 'r', hm: cap !== '' ? 0 : s.hm + 1 };
+  }
+
+  function legal(s) {
+    var ps = pseudo(s, false), out = [];
+    for (var i = 0; i < ps.length; i++) {
+      var ns = make(s, ps[i]);
+      if (!inCheck(ns, s.t)) { ps[i].ns = ns; out.push(ps[i]); }
+    }
+    return out;
+  }
+
+  function evaluateRed(b) {
+    var score = 0;
+    for (var i = 0; i < 90; i++) {
+      var p = b[i];
+      if (p === '') continue;
+      var r = Math.floor(i / 9), c = i % 9, u = p.toLowerCase(), red = isRed(p);
+      var adv = red ? 9 - r : r; // 0 = own back rank, 9 = enemy back rank
+      var v = VAL[u], cd = Math.abs(c - 4);
+      if (u === 'p') {
+        if (adv >= 5) v += 90 + (cd <= 1 ? 30 : 0) + (adv >= 6 && adv <= 8 ? 20 : 0);
+      } else if (u === 'h') v += 20 - cd * 6 + (adv >= 4 && adv <= 7 ? 20 : 0);
+      else if (u === 'c') v += (cd === 0 ? 20 : 0) + (adv <= 2 ? 10 : 0);
+      else if (u === 'r') v += (adv >= 5 ? 20 : 0);
+      score += red ? v : -v;
+    }
+    return score;
+  }
+
+  var R = {
+    key: 'kg-xiangqi',
+    sides: ['r', 'b'],
+    aspect: (9 + 2 * M) / (8 + 2 * M),
+    defaultOpt: 'C',
+    newState: newState,
+    legal: legal,
+    make: make,
+    captures: function (s) { return pseudo(s, true); },
+    inCheck: inCheck,
+    value: function (p) { return VAL[p.toLowerCase()] || 2000; },
+    evaluate: function (s) { var e = evaluateRed(s.b); return s.t === 'r' ? e : -e; },
+    noMoves: function (s, ply) { return -KG.MATE + ply; },
+    sideName: function (t) { return t === 'r' ? 'Red' : 'Black'; },
+    moveText: function (m) { return sqName(m.f) + '–' + sqName(m.t); },
+    result: function (s, ms) {
+      var winner = s.t === 'r' ? 'Black' : 'Red';
+      if (!ms.length) return (inCheck(s, s.t) ? 'Checkmate! ' : 'No legal moves! ') + winner + ' wins.';
+      if (s.hm >= 120) return 'Draw — 60 moves without a capture.';
+      return null;
+    },
+    hit: function (x, y, g) {
+      var s = g.w / (8 + 2 * M);
+      var c = Math.round(x / s - M), r = Math.round(y / s - M);
+      if (!inB(r, c)) return -1;
+      if (g.flip) { r = 9 - r; c = 8 - c; }
+      return r * 9 + c;
+    },
+    draw: function (ctx, g, v) {
+      var s = g.w / (8 + 2 * M), m = M * s, i, r, c;
+      function px(idx) {
+        var rr = Math.floor(idx / 9), cc = idx % 9;
+        if (g.flip) { rr = 9 - rr; cc = 8 - cc; }
+        return [m + cc * s, m + rr * s];
+      }
+      function line(c1, r1, c2, r2) {
+        ctx.beginPath(); ctx.moveTo(m + c1 * s, m + r1 * s); ctx.lineTo(m + c2 * s, m + r2 * s); ctx.stroke();
+      }
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, g.w, g.h);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+      for (r = 0; r < 10; r++) line(0, r, 8, r);
+      for (c = 0; c < 9; c++) {
+        if (c === 0 || c === 8) line(c, 0, c, 9);
+        else { line(c, 0, c, 4); line(c, 5, c, 9); }
+      }
+      line(3, 0, 5, 2); line(5, 0, 3, 2); line(3, 7, 5, 9); line(5, 7, 3, 9);
+      ctx.lineWidth = 3;
+      ctx.strokeRect(m - 5, m - 5, 8 * s + 10, 9 * s + 10);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000';
+      if (v.opt === 'C') {
+        ctx.font = Math.floor(s * 0.5) + 'px serif';
+        ctx.fillText('楚  河', m + 2 * s, m + 4.5 * s);
+        ctx.fillText('漢  界', m + 6 * s, m + 4.5 * s);
+      } else {
+        ctx.font = 'italic ' + Math.floor(s * 0.4) + 'px Georgia, serif';
+        ctx.fillText('~ river ~', m + 4 * s, m + 4.5 * s);
+      }
+
+      var kingSq = v.check ? findKing(v.s.b, v.s.t) : -1, xy;
+      if (v.last) {
+        for (i = 0; i < 2; i++) {
+          xy = px(i ? v.last.t : v.last.f);
+          ctx.lineWidth = 2;
+          ctx.strokeRect(xy[0] - s * 0.48, xy[1] - s * 0.48, s * 0.96, s * 0.96);
+        }
+      }
+      for (i = 0; i < 90; i++) {
+        var p = v.s.b[i];
+        if (p === '') continue;
+        xy = px(i);
+        var red = isRed(p);
+        if (i === kingSq) KG.circle(ctx, xy[0], xy[1], s * 0.49, '#000', null);
+        KG.circle(ctx, xy[0], xy[1], s * 0.43, red ? '#fff' : '#000', '#000', 2);
+        KG.circle(ctx, xy[0], xy[1], s * 0.35, null, red ? '#000' : '#fff', 1);
+        ctx.fillStyle = red ? '#000' : '#fff';
+        if (v.opt === 'C') {
+          ctx.font = 'bold ' + Math.floor(s * 0.48) + 'px serif';
+          ctx.fillText(CN[p], xy[0], xy[1] + s * 0.02);
+        } else {
+          ctx.font = 'bold ' + Math.floor(s * 0.44) + 'px Georgia, serif';
+          ctx.fillText(p.toUpperCase(), xy[0], xy[1] + s * 0.03);
+        }
+      }
+      if (v.sel >= 0) {
+        xy = px(v.sel);
+        ctx.lineWidth = 4; ctx.strokeStyle = '#000';
+        ctx.strokeRect(xy[0] - s * 0.5, xy[1] - s * 0.5, s, s);
+      }
+      for (i = 0; i < v.targets.length; i++) {
+        xy = px(v.targets[i]);
+        if (v.s.b[v.targets[i]] === '') KG.circle(ctx, xy[0], xy[1], s * 0.14, '#000', '#fff', 2);
+        else KG.circle(ctx, xy[0], xy[1], s * 0.5, null, '#000', 4);
+      }
+    }
+  };
+
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>
