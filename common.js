@@ -30,7 +30,7 @@ KG.attrFromEvent = function (e, root, attr) {
   return null;
 };
 
-/* A row of buttons acting like radio buttons. */
+/* A row of buttons acting like radio buttons. onPick may return false to keep the old choice. */
 KG.buttonGroup = function (id, value, onPick) {
   var el = KG.$(id), btns = el.getElementsByTagName('button');
   function mark(v) {
@@ -39,11 +39,9 @@ KG.buttonGroup = function (id, value, onPick) {
   el.onclick = function (e) {
     var v = KG.attrFromEvent(e, el, 'data-v');
     if (v === null) return;
-    mark(v);
-    onPick(v);
+    if (onPick(v) !== false) mark(v);
   };
   mark(value);
-  return el;
 };
 
 /* ---- Generic alpha-beta search. R is a rules object. ---- */

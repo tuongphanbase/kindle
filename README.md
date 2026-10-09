@@ -4,6 +4,7 @@ Light games built for the Kindle web browser (and any other e-ink or low-power b
 
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
+- **Minesweeper**: Easy, Medium and Hard boards, with Dig and Flag modes for touch screens
 - **2048**
 
 It's plain HTML, CSS and ES5 JavaScript with no build step and no external requests. Boards are HTML tables, not canvas, so they work in the Kindle's basic browser. The pages are high-contrast black and white with large tap targets and no animations. Games save in `localStorage`, and chess and Chinese chess show a move log.
