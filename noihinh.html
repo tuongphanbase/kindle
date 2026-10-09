@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Noi Hinh</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .nh { border-collapse: collapse; margin: 0 auto; }
+  .nh td { padding: 0; }
+  .nh .in { position: relative; }
+  .nh .tile { position: absolute; left: 2px; top: 2px; right: 2px; bottom: 2px; border: 2px solid #000; background: #fff;
+    text-align: center; font-weight: bold; font-family: Georgia, serif; border-radius: 4px; -webkit-border-radius: 4px; }
+  .nh .tile.sel { background: #000; color: #fff; }
+  .nh .tile.hint { background: #bbb; }
+  .nh .path { position: absolute; background: #999; border-radius: 50%; -webkit-border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">N&#7889;i H&igrave;nh</span></div>
+<div class="controls" id="levels">
+  <button data-v="e">Easy</button><button data-v="m">Medium</button><button data-v="h">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="hintBtn">Hint</button><button id="shuffleBtn">Shuffle</button>
+</div>
+<p class="help">Tap two matching tiles to remove them. They can only be matched if they can be joined by a path with
+<b>at most two turns</b> that passes only through empty spaces (it may go around the outside of the board). The grey
+dots show the last path. Clear the whole board to win. If no pair can be matched, the tiles are shuffled for you.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-noihinh', SYMS = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  var LEVELS = { e: { r: 4, c: 6, k: 6 }, m: { r: 6, c: 8, k: 12 }, h: { r: 8, c: 10, k: 20 } };
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var level = saved.level || 'e', g = saved.g || null, sel = -1, hintPair = null, lastPath = [], msg = '';
+
+  // The grid has an empty one-cell border so paths can go around the outside.
+  function newGame() {
+    var L = LEVELS[level], W = L.c + 2, H = L.r + 2, tiles = [], cells = [], i, r, c;
+    for (i = 0; i < L.r * L.c; i++) tiles.push(1 + Math.floor(i / 2) % L.k);
+    KG.shuffle(tiles);
+    for (i = 0; i < W * H; i++) cells.push(0);
+    i = 0;
+    for (r = 1; r <= L.r; r++) for (c = 1; c <= L.c; c++) cells[r * W + c] = tiles[i++];
+    g = { W: W, H: H, cells: cells, start: 0, secs: 0, left: L.r * L.c, shuffles: 0 };
+    sel = -1; hintPair = null; lastPath = []; msg = '';
+    ensureMove();
+  }
+
+  // Path between a and b with at most 3 straight segments, or null.
+  function findPath(a, b) {
+    var W = g.W, H = g.H, prev = {}, frontier = [a], seg, i, k;
+    var DR = [-1, 1, 0, 0], DC = [0, 0, -1, 1];
+    prev[a] = -1;
+    for (seg = 0; seg < 3; seg++) {
+      var next = [];
+      for (i = 0; i < frontier.length; i++) {
+        var p = frontier[i], r0 = Math.floor(p / W), c0 = p % W;
+        for (k = 0; k < 4; k++) {
+          var r = r0 + DR[k], c = c0 + DC[k];
+          while (r >= 0 && r < H && c >= 0 && c < W) {
+            var q = r * W + c;
+            if (q === b) { prev[b] = p; return build(prev, a, b); }
+            if (g.cells[q] !== 0) break;
+            if (prev[q] === undefined) { prev[q] = p; next.push(q); }
+            r += DR[k]; c += DC[k];
+          }
+        }
+      }
+      frontier = next;
+    }
+    return null;
+  }
+  // Expand the corner points into every cell along the path.
+  function build(prev, a, b) {
+    var corners = [], p = b, out = [], W = g.W;
+    while (p !== -1) { corners.push(p); p = prev[p]; }
+    for (var i = 0; i < corners.length - 1; i++) {
+      var x = corners[i], y = corners[i + 1], xr = Math.floor(x / W), xc = x % W, yr = Math.floor(y / W), yc = y % W;
+      var dr = yr > xr ? 1 : (yr < xr ? -1 : 0), dc = yc > xc ? 1 : (yc < xc ? -1 : 0);
+      while (xr !== yr || xc !== yc) { out.push(xr * W + xc); xr += dr; xc += dc; }
+    }
+    out.push(a);
+    return out;
+  }
+  function anyMove() {
+    var idx = [], i, j;
+    for (i = 0; i < g.cells.length; i++) if (g.cells[i]) idx.push(i);
+    for (i = 0; i < idx.length; i++) for (j = i + 1; j < idx.length; j++) {
+      if (g.cells[idx[i]] === g.cells[idx[j]] && findPath(idx[i], idx[j])) return [idx[i], idx[j]];
+    }
+    return null;
+  }
+  function reshuffle() {
+    var pos = [], vals = [], i;
+    for (i = 0; i < g.cells.length; i++) if (g.cells[i]) { pos.push(i); vals.push(g.cells[i]); }
+    KG.shuffle(vals);
+    for (i = 0; i < pos.length; i++) g.cells[pos[i]] = vals[i];
+  }
+  function ensureMove() {
+    var tries = 0;
+    while (g.left && !anyMove() && tries++ < 50) { reshuffle(); g.shuffles++; msg = 'No moves left — shuffled.'; }
+  }
+
+  function render() {
+    var txt;
+    if (!g.left) txt = 'Cleared in ' + g.secs + ' s!' + (g.shuffles ? ' (' + g.shuffles + ' shuffles)' : '');
+    else txt = 'Tiles left: ' + g.left + (msg ? ' — ' + msg : '');
+    KG.text(statusEl, txt);
+    var Wpx = Math.min((window.innerWidth || 600) - 24, 720), Hpx = (window.innerHeight || 800) - 250;
+    var S = Math.max(30, Math.floor(Math.min(Wpx / g.W, Hpx / g.H))), fs = Math.round(S * 0.5), i;
+    var onPath = {};
+    for (i = 0; i < lastPath.length; i++) onPath[lastPath[i]] = 1;
+    var h = ['<table class="nh">'];
+    for (i = 0; i < g.cells.length; i++) {
+      if (i % g.W === 0) h.push('<tr>');
+      h.push('<td data-sq="' + i + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">');
+      var v = g.cells[i];
+      if (v) {
+        var cls = 'tile' + (i === sel ? ' sel' : '') + (hintPair && (i === hintPair[0] || i === hintPair[1]) ? ' hint' : '');
+        h.push('<div class="' + cls + '" style="font-size:' + fs + 'px;line-height:' + (S - 8) + 'px">' + SYMS.charAt(v - 1) + '</div>');
+      } else if (onPath[i]) {
+        var d = Math.round(S * 0.22);
+        h.push('<div class="path" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) + 'px;width:' + d + 'px;height:' + d + 'px"></div>');
+      }
+      h.push('</div></td>');
+      if (i % g.W === g.W - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { level: level, g: g });
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || !g.left) return;
+    var p = parseInt(v, 10);
+    if (!g.cells[p]) return;
+    if (!g.start) g.start = new Date().getTime();
+    msg = '';
+    if (sel < 0 || sel === p) { sel = sel === p ? -1 : p; render(); return; }
+    var path = g.cells[sel] === g.cells[p] ? findPath(sel, p) : null;
+    if (!path) { msg = g.cells[sel] === g.cells[p] ? 'Those can’t be joined.' : ''; sel = p; render(); return; }
+    g.cells[sel] = 0; g.cells[p] = 0; g.left -= 2;
+    lastPath = path; sel = -1; hintPair = null;
+    if (!g.left) g.secs = Math.round((new Date().getTime() - g.start) / 1000);
+    else ensureMove();
+    render();
+  };
+  KG.$('hintBtn').onclick = function () { if (g.left) { hintPair = anyMove(); render(); } };
+  KG.$('shuffleBtn').onclick = function () {
+    if (!g.left) return;
+    reshuffle(); g.shuffles++; sel = -1; hintPair = null; lastPath = []; msg = ''; ensureMove(); render();
+  };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('levels', level, function (v) { level = v; newGame(); render(); });
+  if (!g) newGame();
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

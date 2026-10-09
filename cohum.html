@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Hum</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; H&ugrave;m</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">You: Tr&acirc;u (Buffalo)</button><button data-v="ai2">You: H&ugrave;m (Tiger)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button>
+</div>
+<div id="log" class="log"></div>
+<div class="help">
+<p><b>How to play.</b> One H&ugrave;m (tiger) starts in the middle, surrounded by 16 Tr&acirc;u (buffaloes) on the edge.
+Tr&acirc;u moves first. Every piece moves one step along a line to an empty point.</p>
+<ul>
+<li><b>H&ugrave;m</b> can also jump over one Tr&acirc;u next to it, along a line, onto the empty point behind it, eating that Tr&acirc;u.
+H&ugrave;m wins after eating <b>6</b> Tr&acirc;u.</li>
+<li><b>Tr&acirc;u</b> cannot jump. Tr&acirc;u win by trapping H&ugrave;m so it has no move.</li>
+</ul>
+<p>Your game is saved automatically.</p>
+</div>
+<script src="common.js"></script>
+<script>
+(function () {
+  var N = 5, WIN = 6, ADJ = [], JUMP = [], i, k;
+  for (i = 0; i < 25; i++) {
+    var r = Math.floor(i / N), c = i % N, a = KG.alqAdj(r, c, N), adj = [], jumps = [];
+    for (k = 0; k < a.length; k++) {
+      var d = KG.ALQ_DIRS[a[k][2]], lr = r + 2 * d[0], lc = c + 2 * d[1];
+      adj.push(a[k][0] * N + a[k][1]);
+      if (lr >= 0 && lr < N && lc >= 0 && lc < N) jumps.push([a[k][0] * N + a[k][1], lr * N + lc]);
+    }
+    ADJ.push(adj); JUMP.push(jumps);
+  }
+  function sqName(p) { return 'abcde'.charAt(p % N) + (N - Math.floor(p / N)); }
+
+  function newState() {
+    var b = [];
+    for (var j = 0; j < 25; j++) {
+      var rr = Math.floor(j / N), cc = j % N;
+      b.push(rr === 0 || rr === N - 1 || cc === 0 || cc === N - 1 ? 't' : '');
+    }
+    b[12] = 'h';
+    return { b: b, t: 't', cap: 0, hm: 0 };
+  }
+
+  function make(s, m) {
+    var b = s.b.slice(), cap = s.cap;
+    b[m.t] = b[m.f]; b[m.f] = '';
+    if (m.x >= 0) { b[m.x] = ''; cap++; }
+    return { b: b, t: s.t === 't' ? 'h' : 't', cap: cap, hm: m.x >= 0 ? 0 : s.hm + 1 };
+  }
+
+  function legal(s) {
+    var ms = [], j, q;
+    for (j = 0; j < 25; j++) {
+      if (s.b[j] !== s.t) continue;
+      for (q = 0; q < ADJ[j].length; q++) if (s.b[ADJ[j][q]] === '') ms.push({ f: j, t: ADJ[j][q], x: -1 });
+      if (s.t === 'h') {
+        for (q = 0; q < JUMP[j].length; q++) {
+          var jp = JUMP[j][q];
+          if (s.b[jp[0]] === 't' && s.b[jp[1]] === '') ms.push({ f: j, t: jp[1], x: jp[0] });
+        }
+      }
+    }
+    for (j = 0; j < ms.length; j++) ms[j].ns = make(s, ms[j]);
+    return ms;
+  }
+
+  function tigerScore(s) {
+    var tp = -1, j, q, mob = 0, threats = 0;
+    for (j = 0; j < 25; j++) if (s.b[j] === 'h') tp = j;
+    for (q = 0; q < ADJ[tp].length; q++) if (s.b[ADJ[tp][q]] === '') mob++;
+    for (q = 0; q < JUMP[tp].length; q++) if (s.b[JUMP[tp][q][0]] === 't' && s.b[JUMP[tp][q][1]] === '') threats++;
+    return s.cap * 100 + mob * 6 + threats * 25 + (mob === 0 && threats === 0 ? -400 : 0);
+  }
+
+  var R = {
+    key: 'kg-cohum',
+    sides: ['t', 'h'],
+    defaultOpt: '',
+    cols: N,
+    rows: N,
+    newState: newState,
+    legal: legal,
+    make: make,
+    evaluate: function (s) { var e = tigerScore(s); return s.t === 'h' ? e : -e; },
+    terminal: function (s, ms, ply) {
+      if (s.cap >= WIN || !ms.length) return -KG.MATE + ply;
+      if (s.hm >= 120) return 0;
+      return null;
+    },
+    best: function (R, s, level) {
+      return KG.bestNegamax(R, s, level === '1' ? 1 : (level === '2' ? 3 : 6), level === '1' ? 120 : 0);
+    },
+    sideName: function (t) { return t === 'h' ? 'Hùm' : 'Trâu'; },
+    extraStatus: function (s) { return ' · Trâu eaten: ' + s.cap + ' of ' + WIN; },
+    notate: function (s, m) {
+      return (s.t === 'h' ? 'H' : 'T') + sqName(m.f) + (m.x >= 0 ? 'x' : '-') + sqName(m.t);
+    },
+    result: function (s, ms) {
+      if (s.cap >= WIN) return 'Hùm wins — ate ' + WIN + ' Trâu!';
+      if (!ms.length) return s.t === 'h' ? 'Trâu win — Hùm is trapped!' : 'Hùm wins — Trâu cannot move.';
+      if (s.hm >= 120) return 'Draw — 60 moves each without a capture.';
+      return null;
+    },
+    render: function (el, S, v) {
+      var h = ['<table class="grid">'], vr, vc, p;
+      var dsz = Math.round(S * 0.66), doff = Math.round((S - dsz) / 2);
+      for (vr = 0; vr < N; vr++) {
+        h.push('<tr>');
+        for (vc = 0; vc < N; vc++) {
+          p = v.flip ? (N - 1 - vr) * N + (N - 1 - vc) : vr * N + vc;
+          h.push('<td data-sq="' + p + '"><div class="c" style="width:' + S + 'px;height:' + S + 'px">');
+          h.push(KG.alqLines(S, vr, vc, N));
+          if (v.last && (p === v.last.f || p === v.last.t)) {
+            var lb = Math.round(S * 0.1);
+            h.push('<div class="last" style="left:' + lb + 'px;top:' + lb + 'px;right:' + lb + 'px;bottom:' + lb + 'px"></div>');
+          }
+          var pc = v.s.b[p];
+          if (pc !== '') {
+            h.push('<div class="disc ' + (pc === 'h' ? 'db' : 'dw') + '" style="left:' + doff + 'px;top:' + doff +
+              'px;width:' + dsz + 'px;height:' + dsz + 'px;line-height:' + (dsz - 6) + 'px;font-size:' +
+              Math.round(S * (pc === 'h' ? 0.24 : 0.2)) + 'px">' + (pc === 'h' ? 'H&ugrave;m' : 'Tr&acirc;u') + '</div>');
+          }
+          if (p === v.sel) h.push('<div class="sel" style="left:' + (doff - 6) + 'px;top:' + (doff - 6) + 'px;width:' + (dsz + 12) + 'px;height:' + (dsz + 12) + 'px"></div>');
+          if (v.targets[p]) {
+            var d = Math.round(S * 0.24);
+            h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) +
+              'px;width:' + d + 'px;height:' + d + 'px"></div>');
+          }
+          h.push('</div></td>');
+        }
+        h.push('</tr>');
+      }
+      h.push('</table>');
+      el.innerHTML = h.join('');
+    }
+  };
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>

@@ -32,7 +32,9 @@ KG.attrFromEvent = function (e, root, attr) {
 
 /* A row of buttons acting like radio buttons. onPick may return false to keep the old choice. */
 KG.buttonGroup = function (id, value, onPick) {
-  var el = KG.$(id), btns = el.getElementsByTagName('button');
+  var el = KG.$(id);
+  if (!el) return;
+  var btns = el.getElementsByTagName('button');
   function mark(v) {
     for (var i = 0; i < btns.length; i++) btns[i].className = btns[i].getAttribute('data-v') === v ? 'on' : '';
   }
@@ -101,6 +103,64 @@ KG.best = function (R, s, level) {
   return best;
 };
 
+/* Plain negamax for games without a capture search. R needs legal (with ns),
+   evaluate (side to move) and terminal(s, moves, ply) -> score or null. */
+KG.negamax = function (R, s, depth, alpha, beta, ply) {
+  var ms = R.legal(s), term = R.terminal(s, ms, ply);
+  if (term !== null) return term;
+  if (depth <= 0) return R.evaluate(s);
+  for (var i = 0; i < ms.length; i++) {
+    var v = -KG.negamax(R, ms[i].ns, depth - 1, -beta, -alpha, ply + 1);
+    if (v >= beta) return v;
+    if (v > alpha) alpha = v;
+  }
+  return alpha;
+};
+
+KG.bestNegamax = function (R, s, depth, noise) {
+  var ms = KG.shuffle(R.legal(s));
+  if (!ms.length) return null;
+  var best = ms[0], bv = -KG.INF, alpha = -KG.INF;
+  for (var i = 0; i < ms.length; i++) {
+    var v = noise ? -KG.negamax(R, ms[i].ns, depth - 1, -KG.INF, KG.INF, 1) + Math.random() * noise
+                  : -KG.negamax(R, ms[i].ns, depth - 1, -KG.INF, -alpha, 1);
+    if (v > bv) { bv = v; best = ms[i]; }
+    if (v > alpha) alpha = v;
+  }
+  return best;
+};
+
+/* Alquerque-style 5x5 board (Co Ganh, Co Hum). Diagonals run through points where (r + c) is even. */
+KG.ALQ_DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+KG.alqAdj = function (r, c, n) {
+  var out = [], k = (r + c) % 2 === 0 ? 8 : 4;
+  for (var i = 0; i < k; i++) {
+    var nr = r + KG.ALQ_DIRS[i][0], nc = c + KG.ALQ_DIRS[i][1];
+    if (nr >= 0 && nr < n && nc >= 0 && nc < n) out.push([nr, nc, i]);
+  }
+  return out;
+};
+/* Grid lines drawn inside the cell for point (r, c), in display coordinates. */
+KG.alqLines = function (S, r, c, n) {
+  var h = [], lw = S >= 60 ? 3 : 2, half = Math.floor(S / 2), lo = half - Math.floor(lw / 2);
+  var dl = Math.round(S * 0.7072);
+  function seg(l, t, w, hh) { h.push('<div class="seg" style="left:' + l + 'px;top:' + t + 'px;width:' + w + 'px;height:' + hh + 'px"></div>'); }
+  if (c > 0) seg(0, lo, half, lw);
+  if (c < n - 1) seg(lo, lo, S - lo, lw);
+  if (r > 0) seg(lo, 0, lw, half);
+  if (r < n - 1) seg(lo, lo, lw, S - lo);
+  if ((r + c) % 2 === 0) {
+    for (var i = 4; i < 8; i++) {
+      var d = KG.ALQ_DIRS[i], nr = r + d[0], nc = c + d[1];
+      if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+      var tf = 'rotate(' + Math.round(Math.atan2(d[0], d[1]) * 180 / Math.PI) + 'deg)';
+      h.push('<div class="diag" style="left:' + half + 'px;top:' + lo + 'px;width:' + dl + 'px;height:' + lw +
+        'px;-webkit-transform:' + tf + ';transform:' + tf + '"></div>');
+    }
+  }
+  return h.join('');
+};
+
 /* ---- Shared board-game screen controller ---- */
 KG.Game = function (R) {
   var boardEl = KG.$('board'), statusEl = KG.$('status'), logEl = KG.$('log');
@@ -117,6 +177,7 @@ KG.Game = function (R) {
   };
   var sel = -1, moves = [], result = null, thinking = false;
 
+  function inCheck() { return R.inCheck ? R.inCheck(st.s, st.s.t) : false; }
   function human() { return st.mode === 'ai2' ? R.sides[1] : R.sides[0]; }
   function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !result; }
 
@@ -134,7 +195,7 @@ KG.Game = function (R) {
     for (var i = 0; i < moves.length; i++) if (moves[i].f === sel) targets[moves[i].t] = 1;
     R.render(boardEl, cell, {
       s: st.s, sel: sel, targets: targets, last: st.last, opt: st.opt,
-      flip: (st.mode === 'ai2') !== st.flip, check: R.inCheck(st.s, st.s.t)
+      flip: (st.mode === 'ai2') !== st.flip, check: inCheck()
     });
   }
 
@@ -145,7 +206,8 @@ KG.Game = function (R) {
     else {
       txt = R.sideName(st.s.t) + ' to move';
       if (st.mode !== '2p') txt += st.s.t === human() ? ' (you)' : ' (computer)';
-      if (R.inCheck(st.s, st.s.t)) txt += ' — CHECK';
+      if (inCheck()) txt += ' \u2014 CHECK';
+      if (R.extraStatus) txt += R.extraStatus(st.s);
     }
     KG.text(statusEl, txt);
   }
@@ -161,7 +223,7 @@ KG.Game = function (R) {
   function refresh() {
     moves = R.legal(st.s);
     result = R.result(st.s, moves);
-    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    if (KG.$('levels')) KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
     setStatus();
     draw();
     drawLog();
@@ -170,7 +232,7 @@ KG.Game = function (R) {
       thinking = true;
       setStatus();
       setTimeout(function () {
-        var m = KG.best(R, st.s, st.level);
+        var m = (R.best || KG.best)(R, st.s, st.level);
         thinking = false;
         if (m && computersTurn()) play(m);
         else setStatus();
@@ -221,7 +283,7 @@ KG.Game = function (R) {
     sel = -1;
     refresh();
   };
-  KG.$('flipBtn').onclick = function () { st.flip = !st.flip; draw(); save(); };
+  if (KG.$('flipBtn')) KG.$('flipBtn').onclick = function () { st.flip = !st.flip; draw(); save(); };
   KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; st.flip = false; sel = -1; refresh(); });
   KG.buttonGroup('levels', st.level, function (v) { st.level = v; save(); });
   KG.buttonGroup('opts', st.opt, function (v) { st.opt = v; draw(); save(); });

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Me Cung</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .mz { border-collapse: collapse; margin: 0 auto; border-top: 3px solid #000; border-left: 3px solid #000; }
+  .mz td { padding: 0; }
+  .mz .in { position: relative; }
+  .mz .me { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .mz .goal { position: absolute; border: 3px solid #000; }
+  .mz .trail { background: #ddd; }
+  .pad { text-align: center; margin: 6px 0; }
+  .pad button { width: 84px; height: 56px; font-size: 24px; font-weight: bold; }
+  .pad .mid { display: inline-block; width: 84px; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">M&ecirc; Cung</span></div>
+<div class="controls" id="sizes">
+  <button data-v="8">Easy</button><button data-v="12">Medium</button><button data-v="16">Hard</button><button data-v="22">Expert</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="pad">
+  <button id="up">&uarr;</button><br>
+  <button id="left">&larr;</button><span class="mid"></span><button id="right">&rarr;</button><br>
+  <button id="down">&darr;</button>
+</div>
+<div class="controls">
+  <button id="newBtn">New Maze</button><button id="resetBtn">Restart</button>
+</div>
+<p class="help">Lead the black dot from the top-left corner to the square exit at the bottom-right. Use the arrows,
+or tap any square in a straight, open line from the dot. An arrow keeps going along a corridor until the next
+turn-off, so you need fewer taps. Grey squares show where you have been.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-mecung', UP = 1, RIGHT = 2, DOWN = 4, LEFT = 8;
+  var DR = {}, DC = {}, BACK = {};
+  DR[UP] = -1; DC[UP] = 0; BACK[UP] = DOWN;
+  DR[DOWN] = 1; DC[DOWN] = 0; BACK[DOWN] = UP;
+  DR[LEFT] = 0; DC[LEFT] = -1; BACK[LEFT] = RIGHT;
+  DR[RIGHT] = 0; DC[RIGHT] = 1; BACK[RIGHT] = LEFT;
+  var DIRS = [UP, RIGHT, DOWN, LEFT];
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '8', g = saved.g || null;
+
+  // open[i] is a bitmask of directions without a wall.
+  function newMaze() {
+    var n = parseInt(size, 10), open = [], seen = [], i;
+    for (i = 0; i < n * n; i++) { open.push(0); seen.push(0); }
+    var stack = [0];
+    seen[0] = 1;
+    while (stack.length) {
+      var cur = stack[stack.length - 1], r = Math.floor(cur / n), c = cur % n, opts = [];
+      for (i = 0; i < 4; i++) {
+        var d = DIRS[i], nr = r + DR[d], nc = c + DC[d];
+        if (nr >= 0 && nr < n && nc >= 0 && nc < n && !seen[nr * n + nc]) opts.push(d);
+      }
+      if (!opts.length) { stack.pop(); continue; }
+      var dd = opts[Math.floor(Math.random() * opts.length)], nx = (r + DR[dd]) * n + c + DC[dd];
+      open[cur] |= dd; open[nx] |= BACK[dd]; seen[nx] = 1;
+      stack.push(nx);
+    }
+    var trail = [];
+    for (i = 0; i < n * n; i++) trail.push(0);
+    trail[0] = 1;
+    g = { n: n, open: open, pos: 0, trail: trail, steps: 0, start: 0, secs: 0, done: false };
+  }
+  if (!g || String(g.n) !== size) newMaze();
+
+  function step(d) {
+    if (!(g.open[g.pos] & d)) return false;
+    g.pos = (Math.floor(g.pos / g.n) + DR[d]) * g.n + (g.pos % g.n) + DC[d];
+    g.trail[g.pos] = 1;
+    g.steps++;
+    return true;
+  }
+  function exits(p) { var k = 0; for (var i = 0; i < 4; i++) if (g.open[p] & DIRS[i]) k++; return k; }
+  function finish() {
+    if (g.pos === g.n * g.n - 1 && !g.done) {
+      g.done = true;
+      g.secs = Math.round((new Date().getTime() - g.start) / 1000);
+    }
+  }
+  function move(d) {
+    if (g.done) return;
+    if (!g.start) g.start = new Date().getTime();
+    if (!step(d)) return;
+    // Keep running along a corridor (exactly two openings) until a junction, dead end or the exit.
+    var guard = 0;
+    while (exits(g.pos) === 2 && g.pos !== g.n * g.n - 1 && guard++ < 1000) {
+      var nd = 0;
+      for (var i = 0; i < 4; i++) if ((g.open[g.pos] & DIRS[i]) && DIRS[i] !== BACK[d]) nd = DIRS[i];
+      d = nd;
+      step(d);
+    }
+    finish();
+    render();
+  }
+  function tapCell(t) {
+    if (g.done || t === g.pos) return;
+    var n = g.n, r = Math.floor(g.pos / n), c = g.pos % n, tr = Math.floor(t / n), tc = t % n, d;
+    if (tr === r) d = tc > c ? RIGHT : LEFT;
+    else if (tc === c) d = tr > r ? DOWN : UP;
+    else return;
+    if (!g.start) g.start = new Date().getTime();
+    while (g.pos !== t && step(d)) {}
+    finish();
+    render();
+  }
+
+  function render() {
+    var n = g.n, i;
+    KG.text(statusEl, g.done ? 'You escaped! ' + g.steps + ' steps in ' + g.secs + ' s.' : 'Steps: ' + g.steps);
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 380, 680);
+    var S = Math.max(14, Math.floor((W - 3) / n) - 3), dot = Math.round(S * 0.6), off = Math.round((S - dot) / 2);
+    var h = ['<table class="mz">'];
+    for (i = 0; i < n * n; i++) {
+      if (i % n === 0) h.push('<tr>');
+      var o = g.open[i];
+      var st = 'border-right:3px solid ' + (o & RIGHT ? '#fff' : '#000') + ';border-bottom:3px solid ' + (o & DOWN ? '#fff' : '#000');
+      h.push('<td data-sq="' + i + '" class="' + (g.trail[i] ? 'trail' : '') + '" style="' + st + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">');
+      if (i === n * n - 1) h.push('<div class="goal" style="left:' + (off - 2) + 'px;top:' + (off - 2) + 'px;width:' + (dot + 4) + 'px;height:' + (dot + 4) + 'px"></div>');
+      if (i === g.pos) h.push('<div class="me" style="left:' + off + 'px;top:' + off + 'px;width:' + dot + 'px;height:' + dot + 'px"></div>');
+      h.push('</div></td>');
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, g: g });
+  }
+
+  KG.$('up').onclick = function () { move(UP); };
+  KG.$('right').onclick = function () { move(RIGHT); };
+  KG.$('down').onclick = function () { move(DOWN); };
+  KG.$('left').onclick = function () { move(LEFT); };
+  document.onkeydown = function (e) {
+    e = e || window.event;
+    var map = { 38: UP, 39: RIGHT, 40: DOWN, 37: LEFT }, d = map[e.keyCode];
+    if (d) { move(d); if (e.preventDefault) e.preventDefault(); return false; }
+  };
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v !== null) tapCell(parseInt(v, 10));
+  };
+  KG.$('newBtn').onclick = function () { newMaze(); render(); };
+  KG.$('resetBtn').onclick = function () {
+    for (var i = 0; i < g.trail.length; i++) g.trail[i] = 0;
+    g.trail[0] = 1; g.pos = 0; g.steps = 0; g.start = 0; g.done = false; render();
+  };
+  KG.buttonGroup('sizes', size, function (v) { size = v; newMaze(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

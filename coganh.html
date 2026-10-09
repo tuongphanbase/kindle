@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Ganh</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; G&aacute;nh</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (White)</button><button data-v="ai2">Vs Computer (Black)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button>
+</div>
+<div id="log" class="log"></div>
+<div class="help">
+<p><b>How to play.</b> Each side has 8 pieces. Take turns moving one piece one step along a line to an empty point.
+White moves first. Pieces are never removed &mdash; they change sides:</p>
+<ul>
+<li><b>G&aacute;nh (carry):</b> move into a point between two enemy pieces on one line, and both become yours.</li>
+<li><b>V&acirc;y (surround):</b> enemy pieces that can no longer move after your move become yours.</li>
+<li><b>M&#7903; (open):</b> if your opponent moves away and leaves a point where you can g&aacute;nh, you must g&aacute;nh there.</li>
+</ul>
+<p>Win by turning all of your opponent's pieces into yours. Your game is saved automatically.</p>
+</div>
+<script src="common.js"></script>
+<script>
+(function () {
+  var N = 5, ADJ = [], LINE = [], i;
+  // Opposite direction pairs from KG.ALQ_DIRS: up/down, left/right, and the two diagonals.
+  var PAIRS = [[0, 1], [2, 3], [4, 7], [5, 6]];
+  for (i = 0; i < 25; i++) {
+    var r = Math.floor(i / N), c = i % N, a = KG.alqAdj(r, c, N), list = [], byDir = {};
+    for (var k = 0; k < a.length; k++) { list.push(a[k][0] * N + a[k][1]); byDir[a[k][2]] = a[k][0] * N + a[k][1]; }
+    ADJ.push(list); LINE.push(byDir);
+  }
+  function opp(t) { return t === 'w' ? 'b' : 'w'; }
+  function sqName(p) { return 'abcde'.charAt(p % N) + (N - Math.floor(p / N)); }
+  function count(b, t) { var n = 0; for (var j = 0; j < 25; j++) if (b[j] === t) n++; return n; }
+
+  function newState() {
+    var b = [], j;
+    for (j = 0; j < 25; j++) b.push('');
+    for (j = 0; j < 5; j++) { b[j] = 'b'; b[20 + j] = 'w'; }
+    b[5] = 'b'; b[9] = 'b'; b[14] = 'b';
+    b[15] = 'w'; b[19] = 'w'; b[10] = 'w';
+    return { b: b, t: 'w', lf: -1, hm: 0, got: 0 };
+  }
+
+  // Enemy points that a piece of `me` standing on p would carry (ganh).
+  function ganhAt(b, p, me) {
+    var o = opp(me), out = [];
+    for (var k = 0; k < 4; k++) {
+      var x = LINE[p][PAIRS[k][0]], y = LINE[p][PAIRS[k][1]];
+      if (x !== undefined && y !== undefined && b[x] === o && b[y] === o) out.push(x, y);
+    }
+    return out;
+  }
+
+  function make(s, m) {
+    var b = s.b.slice(), me = s.t, o = opp(me), got = 0, j, k;
+    b[m.t] = me; b[m.f] = '';
+    var conv = ganhAt(b, m.t, me);
+    for (k = 0; k < conv.length; k++) b[conv[k]] = me;
+    got += conv.length;
+    // Vay: every enemy group with no empty neighbouring point is converted.
+    var seen = {};
+    for (j = 0; j < 25; j++) {
+      if (b[j] !== o || seen[j]) continue;
+      var group = [j], free = false, q = 0;
+      seen[j] = 1;
+      while (q < group.length) {
+        var p = group[q++];
+        for (k = 0; k < ADJ[p].length; k++) {
+          var nb = ADJ[p][k];
+          if (b[nb] === '') free = true;
+          else if (b[nb] === o && !seen[nb]) { seen[nb] = 1; group.push(nb); }
+        }
+      }
+      if (!free) { for (k = 0; k < group.length; k++) b[group[k]] = me; got += group.length; }
+    }
+    return { b: b, t: o, lf: m.f, hm: got ? 0 : s.hm + 1, got: got };
+  }
+
+  function legal(s) {
+    var ms = [], j, k;
+    for (j = 0; j < 25; j++) {
+      if (s.b[j] !== s.t) continue;
+      for (k = 0; k < ADJ[j].length; k++) if (s.b[ADJ[j][k]] === '') ms.push({ f: j, t: ADJ[j][k] });
+    }
+    if (s.lf >= 0) {
+      var forced = [];
+      for (j = 0; j < ms.length; j++) {
+        if (ms[j].t !== s.lf) continue;
+        var tmp = s.b.slice(); tmp[ms[j].t] = s.t; tmp[ms[j].f] = '';
+        if (ganhAt(tmp, ms[j].t, s.t).length) forced.push(ms[j]);
+      }
+      if (forced.length) ms = forced;
+    }
+    for (j = 0; j < ms.length; j++) ms[j].ns = make(s, ms[j]);
+    return ms;
+  }
+
+  function mobility(b, t) {
+    var n = 0;
+    for (var j = 0; j < 25; j++) if (b[j] === t) for (var k = 0; k < ADJ[j].length; k++) if (b[ADJ[j][k]] === '') n++;
+    return n;
+  }
+
+  var R = {
+    key: 'kg-coganh',
+    sides: ['w', 'b'],
+    defaultOpt: '',
+    cols: N,
+    rows: N,
+    newState: newState,
+    legal: legal,
+    make: make,
+    evaluate: function (s) {
+      var o = opp(s.t);
+      return (count(s.b, s.t) - count(s.b, o)) * 100 + (mobility(s.b, s.t) - mobility(s.b, o)) * 3;
+    },
+    terminal: function (s, ms, ply) {
+      if (!ms.length || !count(s.b, s.t)) return -KG.MATE + ply;
+      if (s.hm >= 100) return 0;
+      return null;
+    },
+    best: function (R, s, level) {
+      return KG.bestNegamax(R, s, level === '1' ? 1 : (level === '2' ? 2 : 4), level === '1' ? 150 : 0);
+    },
+    sideName: function (t) { return t === 'w' ? 'White' : 'Black'; },
+    extraStatus: function (s) { return ' · White ' + count(s.b, 'w') + ', Black ' + count(s.b, 'b'); },
+    notate: function (s, m) {
+      var ns = m.ns || make(s, m);
+      return sqName(m.f) + '-' + sqName(m.t) + (ns.got ? '(+' + ns.got + ')' : '');
+    },
+    result: function (s, ms) {
+      var winner = s.t === 'w' ? 'Black' : 'White';
+      if (!count(s.b, s.t)) return winner + ' wins — all pieces taken!';
+      if (!ms.length) return winner + ' wins — no moves left.';
+      if (s.hm >= 100) return 'Draw — 50 moves each without a capture.';
+      return null;
+    },
+    render: function (el, S, v) {
+      var h = ['<table class="grid">'], vr, vc, p;
+      var dsz = Math.round(S * 0.62), doff = Math.round((S - dsz) / 2);
+      for (vr = 0; vr < N; vr++) {
+        h.push('<tr>');
+        for (vc = 0; vc < N; vc++) {
+          p = v.flip ? (N - 1 - vr) * N + (N - 1 - vc) : vr * N + vc;
+          h.push('<td data-sq="' + p + '"><div class="c" style="width:' + S + 'px;height:' + S + 'px">');
+          h.push(KG.alqLines(S, vr, vc, N));
+          if (v.last && (p === v.last.f || p === v.last.t)) {
+            var lb = Math.round(S * 0.12);
+            h.push('<div class="last" style="left:' + lb + 'px;top:' + lb + 'px;right:' + lb + 'px;bottom:' + lb + 'px"></div>');
+          }
+          if (v.s.b[p] !== '') {
+            h.push('<div class="disc ' + (v.s.b[p] === 'w' ? 'dw' : 'db') + '" style="left:' + doff + 'px;top:' + doff +
+              'px;width:' + dsz + 'px;height:' + dsz + 'px"></div>');
+          }
+          if (p === v.sel) h.push('<div class="sel" style="left:' + (doff - 6) + 'px;top:' + (doff - 6) + 'px;width:' + (dsz + 12) + 'px;height:' + (dsz + 12) + 'px"></div>');
+          if (v.targets[p]) {
+            var d = Math.round(S * 0.24);
+            h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) +
+              'px;width:' + d + 'px;height:' + d + 'px"></div>');
+          }
+          h.push('</div></td>');
+        }
+        h.push('</tr>');
+      }
+      h.push('</table>');
+      el.innerHTML = h.join('');
+    }
+  };
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>

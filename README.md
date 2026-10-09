@@ -2,6 +2,13 @@
 
 A "Kindle Home" page of light games for the Kindle web browser (and any other e-ink or low-power browser):
 
+- **Cờ Gánh**: the Vietnamese capture-by-conversion game (gánh, vây and mở rules), against the computer or a friend
+- **Cờ Hùm**: one Hùm (tiger) against 16 Trâu (buffaloes); play either side
+- **Caro**: five in a row on a 15×15 board
+- **Nối Ô**: Dots & Boxes, 3×3 to 6×6
+- **Khoanh Số**: find and circle the numbers in order, against the clock
+- **Mê Cung**: random mazes in four sizes
+- **Nối Hình**: Onet-style tile matching (paths with at most two turns)
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
 - **Ô Ăn Quan**: Vietnamese Mandarin Square Capturing, against the computer or a friend

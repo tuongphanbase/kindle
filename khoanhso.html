@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Khoanh So</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .ks { border-collapse: collapse; margin: 0 auto; border: 2px solid #000; }
+  .ks td { padding: 0; border: 1px solid #bbb; }
+  .ks .in { position: relative; overflow: hidden; }
+  .ks .num { position: absolute; text-align: center; font-weight: bold; }
+  .ks .circ { position: absolute; border: 3px solid #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .ks .done .num { color: #888; }
+  .ks .hint { background: #ddd; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Khoanh S&#7889;</span></div>
+<div class="controls" id="sizes">
+  <button data-v="5">25 numbers</button><button data-v="6">36</button><button data-v="7">49</button><button data-v="8">64</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="hintBtn">Hint</button>
+</div>
+<p class="help">Find the numbers <b>in order</b>, starting from 1, and tap each one to circle it. The timer starts on your
+first tap. A hint shades the next number but adds 10 seconds. Try to beat your best time for each size!</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-khoanhso';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '5', best = saved.best || {}, g = saved.g || null, msg = '', hint = false;
+
+  function newGame() {
+    var n = parseInt(size, 10), nums = [], i;
+    for (i = 1; i <= n * n; i++) nums.push(i);
+    KG.shuffle(nums);
+    var cells = [];
+    for (i = 0; i < nums.length; i++) {
+      // Random size and position inside the cell, like numbers scattered on paper.
+      cells.push({ v: nums[i], fs: 0.3 + Math.random() * 0.25, dx: Math.random() * 0.3 - 0.15, dy: Math.random() * 0.3 - 0.15 });
+    }
+    g = { n: n, cells: cells, next: 1, start: 0, penalty: 0, wrong: 0, secs: 0 };
+    msg = ''; hint = false;
+  }
+  if (!g || String(g.n) !== size) newGame();
+
+  function save() { KG.save(KEY, { size: size, best: best, g: g }); }
+
+  function render() {
+    var n = g.n, total = n * n, txt;
+    if (g.next > total) {
+      txt = 'Done in ' + g.secs + ' s' + (g.wrong ? ' (' + g.wrong + ' wrong taps)' : '') + '. Best: ' + best[size] + ' s.';
+    } else {
+      txt = 'Find: ' + g.next + (msg ? ' — ' + msg : '') + (best[size] ? '   (best ' + best[size] + ' s)' : '');
+    }
+    KG.text(statusEl, txt);
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 240, 680);
+    var S = Math.floor(W / n) - 1, h = ['<table class="ks">'], i;
+    for (i = 0; i < total; i++) {
+      var c = g.cells[i], done = c.v < g.next;
+      if (i % n === 0) h.push('<tr>');
+      var fs = Math.round(S * c.fs), lh = Math.round(fs * 1.2), tw = Math.round(fs * (String(c.v).length * 0.62 + 0.5));
+      // Keep the number (and its circle) fully inside the square.
+      var left = Math.max(5, Math.min(S - tw - 5, Math.round((S - tw) / 2 + c.dx * S)));
+      var top = Math.max(6, Math.min(S - lh - 6, Math.round((S - lh) / 2 + c.dy * S)));
+      h.push('<td data-sq="' + i + '" class="' + (done ? 'done' : '') + (hint && c.v === g.next ? ' hint' : '') + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">' +
+        '<div class="num" style="left:' + left + 'px;top:' + top + 'px;width:' + tw + 'px;font-size:' + fs + 'px;line-height:' + lh + 'px">' + c.v + '</div>');
+      if (done) {
+        var cw = tw + 6, ch = lh + 8;
+        h.push('<div class="circ" style="left:' + (left - 3) + 'px;top:' + (top - 4) + 'px;width:' + cw + 'px;height:' + ch + 'px"></div>');
+      }
+      h.push('</div></td>');
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    save();
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || g.next > g.n * g.n) return;
+    var c = g.cells[parseInt(v, 10)];
+    if (!g.start) g.start = new Date().getTime();
+    if (c.v === g.next) {
+      g.next++; msg = ''; hint = false;
+      if (g.next > g.n * g.n) {
+        g.secs = Math.round((new Date().getTime() - g.start) / 1000) + g.penalty;
+        if (!best[size] || g.secs < best[size]) best[size] = g.secs;
+      }
+    } else if (c.v > g.next) {
+      g.wrong++; msg = c.v + ' is not ' + g.next;
+    } else return;
+    render();
+  };
+  KG.$('hintBtn').onclick = function () {
+    if (g.next > g.n * g.n || hint) return;
+    if (!g.start) g.start = new Date().getTime();
+    hint = true; g.penalty += 10; render();
+  };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('sizes', size, function (v) { size = v; newGame(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

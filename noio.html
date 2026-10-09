@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Noi O</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .dnb { border-collapse: collapse; margin: 0 auto; }
+  .dnb td { padding: 0; text-align: center; vertical-align: middle; }
+  .dnb .ln { position: relative; }
+  .dnb .bar { position: absolute; background: #000; }
+  .dnb .bar.new { background: #777; }
+  .dnb .ghost { position: absolute; background: #ccc; }
+  .dnb .dotc { position: relative; }
+  .dnb .pt { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .dnb .b1 { background: #000; color: #fff; font-weight: bold; }
+  .dnb .b2 { background: #aaa; color: #000; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">N&#7889;i &Ocirc;</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (go first)</button><button data-v="ai2">Vs Computer (go second)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div class="controls" id="sizes">
+  Size: <button data-v="3">3&times;3</button><button data-v="4">4&times;4</button><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button>
+</div>
+<p class="help">Take turns tapping between two dots to draw a line. Close the fourth side of a box to win it and
+<b>take another turn</b>. When every line is drawn, the player with more boxes wins. The newest line is grey.
+Player 1's boxes are black and Player 2's are grey. Your game is saved automatically.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-noio';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var st = { g: saved.g || null, hist: saved.hist || [], mode: saved.mode || 'ai1', level: saved.level || '2', size: saved.size || '4' };
+  var busy = false;
+
+  function newGame() {
+    var n = parseInt(st.size, 10), i, g = { n: n, h: [], v: [], own: [], p: 1, sc: [0, 0, 0], last: '' };
+    for (i = 0; i < (n + 1) * n; i++) { g.h.push(0); g.v.push(0); }
+    for (i = 0; i < n * n; i++) g.own.push(0);
+    st.g = g; st.hist = [];
+  }
+  if (!st.g) newGame();
+
+  function copy(g) {
+    return { n: g.n, h: g.h.slice(), v: g.v.slice(), own: g.own.slice(), p: g.p, sc: g.sc.slice(), last: g.last };
+  }
+  // v lines are indexed r * (n + 1) + c; h lines r * n + c.
+  function sides(g, r, c) {
+    var n = g.n;
+    return g.h[r * n + c] + g.h[(r + 1) * n + c] + g.v[r * (n + 1) + c] + g.v[r * (n + 1) + c + 1];
+  }
+  function boxesOf(g, id) {
+    var n = g.n, k = parseInt(id.substring(1), 10), out = [];
+    if (id.charAt(0) === 'h') {
+      var r = Math.floor(k / n), c = k % n;
+      if (r > 0) out.push([r - 1, c]);
+      if (r < n) out.push([r, c]);
+    } else {
+      var r2 = Math.floor(k / (n + 1)), c2 = k % (n + 1);
+      if (c2 > 0) out.push([r2, c2 - 1]);
+      if (c2 < n) out.push([r2, c2]);
+    }
+    return out;
+  }
+  function isSet(g, id) { var k = parseInt(id.substring(1), 10); return id.charAt(0) === 'h' ? g.h[k] : g.v[k]; }
+  function freeLines(g) {
+    var out = [], i;
+    for (i = 0; i < g.h.length; i++) if (!g.h[i]) out.push('h' + i);
+    for (i = 0; i < g.v.length; i++) if (!g.v[i]) out.push('v' + i);
+    return out;
+  }
+  // Draws a line in g (mutates). Returns boxes completed.
+  function draw(g, id) {
+    var k = parseInt(id.substring(1), 10), made = 0, bx = boxesOf(g, id), i;
+    if (id.charAt(0) === 'h') g.h[k] = 1; else g.v[k] = 1;
+    for (i = 0; i < bx.length; i++) {
+      if (sides(g, bx[i][0], bx[i][1]) === 4) { g.own[bx[i][0] * g.n + bx[i][1]] = g.p; made++; }
+    }
+    g.sc[g.p] += made;
+    g.last = id;
+    if (!made) g.p = 3 - g.p;
+    return made;
+  }
+  function completes(g, id) {
+    var bx = boxesOf(g, id), n = 0;
+    for (var i = 0; i < bx.length; i++) if (sides(g, bx[i][0], bx[i][1]) === 3) n++;
+    return n;
+  }
+  function unsafe(g, id) {
+    var bx = boxesOf(g, id);
+    for (var i = 0; i < bx.length; i++) if (sides(g, bx[i][0], bx[i][1]) === 2) return true;
+    return false;
+  }
+  // Boxes the next player could take in a row by greedily closing boxes.
+  function giveaway(g, id) {
+    var t = copy(g), total = 0, again = true;
+    draw(t, id);
+    while (again) {
+      again = false;
+      var fl = freeLines(t);
+      for (var i = 0; i < fl.length; i++) if (completes(t, fl[i])) { total += draw(t, fl[i]); again = true; break; }
+    }
+    return total;
+  }
+  function pickLine(g) {
+    var fl = KG.shuffle(freeLines(g)), i, lv = st.level;
+    for (i = 0; i < fl.length; i++) if (completes(g, fl[i]) && (lv !== '1' || Math.random() < 0.6)) return fl[i];
+    var safe = [];
+    for (i = 0; i < fl.length; i++) if (!unsafe(g, fl[i])) safe.push(fl[i]);
+    if (safe.length && (lv !== '1' || Math.random() < 0.7)) return safe[0];
+    if (lv !== '3') return fl[0];
+    var best = fl[0], bv = 1e9;
+    for (i = 0; i < fl.length; i++) {
+      var v = giveaway(g, fl[i]);
+      if (v < bv) { bv = v; best = fl[i]; }
+    }
+    return best;
+  }
+
+  function human() { return st.mode === 'ai2' ? 2 : 1; }
+  function over() { return freeLines(st.g).length === 0; }
+  function computersTurn() { return st.mode !== '2p' && st.g.p !== human() && !over(); }
+  function names() {
+    if (st.mode === '2p') return ['', 'Player 1', 'Player 2'];
+    return human() === 1 ? ['', 'You', 'Computer'] : ['', 'Computer', 'You'];
+  }
+
+  function play(id) {
+    st.hist.push(copy(st.g));
+    draw(st.g, id);
+    refresh();
+  }
+
+  function refresh() {
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    var nm = names(), g = st.g, txt;
+    var score = nm[1] + ' ' + g.sc[1] + ' – ' + g.sc[2] + ' ' + nm[2];
+    if (over()) {
+      txt = g.sc[1] === g.sc[2] ? 'Draw! ' : (g.sc[1] > g.sc[2] ? nm[1] : nm[2]) + (st.mode !== '2p' && (g.sc[1] > g.sc[2] ? 1 : 2) === human() ? ' win! ' : ' wins! ');
+      txt += '(' + score + ')';
+    } else {
+      txt = (busy ? 'Computer is playing…' : nm[g.p] + (nm[g.p] === 'You' ? 'r turn' : '’s turn')) + ' · ' + score;
+    }
+    KG.text(statusEl, txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !busy) {
+      busy = true;
+      KG.text(statusEl, 'Computer is playing… · ' + score);
+      setTimeout(function () {
+        busy = false;
+        if (computersTurn()) play(pickLine(st.g));
+      }, 450);
+    }
+  }
+
+  function render() {
+    var g = st.g, n = g.n, r, c, h = ['<table class="dnb">'];
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 330, 640);
+    var D = 26, B = Math.max(40, Math.floor((W - (n + 1) * D) / n)), th = 7, pt = 12;
+    for (r = 0; r <= 2 * n; r++) {
+      h.push('<tr>');
+      for (c = 0; c <= 2 * n; c++) {
+        var w = c % 2 ? B : D, ht = r % 2 ? B : D, id, on;
+        if (r % 2 === 0 && c % 2 === 0) {
+          h.push('<td class="dotc" style="width:' + w + 'px;height:' + ht + 'px"><div style="position:relative;width:' + w + 'px;height:' + ht +
+            'px"><div class="pt" style="left:' + (D - pt) / 2 + 'px;top:' + (D - pt) / 2 + 'px;width:' + pt + 'px;height:' + pt + 'px"></div></div></td>');
+        } else if (r % 2 === 0) {
+          id = 'h' + ((r / 2) * n + (c - 1) / 2); on = isSet(g, id);
+          h.push('<td data-ln="' + id + '"><div class="ln" style="width:' + w + 'px;height:' + ht + 'px">' +
+            (on ? '<div class="bar' + (g.last === id ? ' new' : '') + '" style="left:-2px;right:-2px;top:' + (D - th) / 2 + 'px;height:' + th + 'px"></div>'
+                : '<div class="ghost" style="left:6px;right:6px;top:' + (D / 2 - 1) + 'px;height:2px"></div>') + '</div></td>');
+        } else if (c % 2 === 0) {
+          id = 'v' + (((r - 1) / 2) * (n + 1) + c / 2); on = isSet(g, id);
+          h.push('<td data-ln="' + id + '"><div class="ln" style="width:' + w + 'px;height:' + ht + 'px">' +
+            (on ? '<div class="bar' + (g.last === id ? ' new' : '') + '" style="top:-2px;bottom:-2px;left:' + (D - th) / 2 + 'px;width:' + th + 'px"></div>'
+                : '<div class="ghost" style="top:6px;bottom:6px;left:' + (D / 2 - 1) + 'px;width:2px"></div>') + '</div></td>');
+        } else {
+          var o = g.own[((r - 1) / 2) * n + (c - 1) / 2], nm = st.mode === '2p' ? ['', 'P1', 'P2'] : (human() === 1 ? ['', 'YOU', 'CPU'] : ['', 'CPU', 'YOU']);
+          h.push('<td class="' + (o ? 'b' + o : '') + '" style="width:' + w + 'px;height:' + ht + 'px;font-size:' + Math.round(B * 0.22) + 'px">' +
+            (o ? nm[o] : '') + '</td>');
+        }
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+  }
+
+  boardEl.onclick = function (e) {
+    var id = KG.attrFromEvent(e, boardEl, 'data-ln');
+    if (id === null || busy || computersTurn() || over() || isSet(st.g, id)) return;
+    play(id);
+  };
+  KG.$('newBtn').onclick = function () {
+    if (busy) return;
+    if (st.hist.length && !over() && !window.confirm('Start a new game?')) return;
+    newGame(); refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (busy || !st.hist.length) return;
+    do { st.g = st.hist.pop(); } while (st.mode !== '2p' && st.hist.length && st.g.p !== human());
+    refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; KG.save(KEY, st); });
+  KG.buttonGroup('sizes', st.size, function (v) {
+    if (st.hist.length && !over() && !window.confirm('Start a new game at this size?')) return false;
+    st.size = v; newGame(); refresh();
+  });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>
