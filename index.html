@@ -1,20 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Kindle Games</title>
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Kindle Home</title>
+<style>
+* { -webkit-box-sizing: border-box; box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: Georgia, "Times New Roman", serif; }
+.page { width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 10px 24px; }
+h1 { margin: 4px 0 2px; text-align: center; font-size: 31px; font-weight: normal; letter-spacing: 2px; }
+.subtitle { text-align: center; margin: 0 0 14px; font-size: 14px; color: #555; }
+.section-title { margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #111; font-size: 18px; font-weight: bold; letter-spacing: 1px; }
+/* Two-column cards with inline-block (works in old Kindle browsers without CSS grid). */
+.grid { font-size: 0; }
+.card {
+  display: inline-block; vertical-align: top; width: 49%; margin: 0 2% 9px 0;
+  min-height: 74px; padding: 10px 8px; border: 2px solid #222; border-radius: 7px; -webkit-border-radius: 7px;
+  background: #fff; color: #111; text-decoration: none; text-align: center; -webkit-tap-highlight-color: transparent;
+}
+.grid .card:nth-child(2n) { margin-right: 0; }
+.card:active, .card:focus { background: #111; color: #fff; outline: none; }
+.name { display: block; font-size: 21px; line-height: 1.2; font-weight: bold; }
+.desc { display: block; margin-top: 5px; font-size: 13px; line-height: 1.2; color: #555; }
+.card:active .desc, .card:focus .desc { color: #fff; }
+.small-grid .card { min-height: 60px; }
+.small-grid .name { font-size: 18px; }
+.footer { margin-top: 19px; padding-top: 10px; border-top: 1px solid #aaa; text-align: center; color: #555; font-size: 12px; line-height: 1.5; }
+@media (max-width: 480px) {
+  .page { padding: 8px 6px 18px; }
+  h1 { font-size: 27px; }
+  .card { min-height: 66px; padding: 9px 5px; margin-bottom: 6px; }
+  .name { font-size: 18px; }
+  .desc { font-size: 12px; }
+}
+</style>
 </head>
 <body>
-<h1>Kindle Games</h1>
-<p>Simple games made for e-ink screens. Everything runs in the browser and your games are saved automatically.</p>
-<div class="games">
-  <a class="game" href="chess.html">Chess<span>Play the computer (3 levels) or a friend.</span></a>
-  <a class="game" href="xiangqi.html">Chinese Chess (Xiangqi)<span>Play the computer (3 levels) or a friend.</span></a>
-  <a class="game" href="minesweeper.html">Minesweeper<span>Find all the mines. Three board sizes.</span></a>
-  <a class="game" href="2048.html">2048<span>Slide and merge tiles to reach 2048.</span></a>
+<div class="page">
+<h1>KINDLE HOME</h1>
+<div class="subtitle">Games &amp; simple web tools</div>
+
+<div class="section-title">GAMES</div>
+<div class="grid">
+<a class="card" href="oanquan.html"><span class="name">&Ocirc; &#258;n Quan</span><span class="desc">Vietnamese stone game</span></a>
+<a class="card" href="xiangqi.html"><span class="name">C&#7901; T&#432;&#7899;ng</span><span class="desc">Chinese chess</span></a>
+<a class="card" href="chess.html"><span class="name">C&#7901; Vua</span><span class="desc">Chess</span></a>
+<a class="card" href="minesweeper.html"><span class="name">D&ograve; M&igrave;n</span><span class="desc">Minesweeper</span></a>
+<a class="card" href="2048.html"><span class="name">2048</span><span class="desc">Slide &amp; merge tiles</span></a>
 </div>
-<p class="help">Tip: bookmark this page in the Kindle browser so you can find it again.</p>
+
+<div class="section-title">QUICK LINKS</div>
+<div class="grid small-grid">
+<a class="card" href="https://github.com/tuongphanbase/kindle"><span class="name">GitHub</span><span class="desc">This repository</span></a>
+<a class="card" href="index.html"><span class="name">Refresh Home</span><span class="desc">Reload this page</span></a>
+</div>
+
+<div class="footer">Built for a simple Kindle browser.<br>No frameworks &middot; no external fonts &middot; no animation.<br>Games save automatically.</div>
+</div>
 </body>
 </html>

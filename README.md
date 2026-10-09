@@ -1,9 +1,10 @@
 # Kindle Games
 
-Light games built for the Kindle web browser (and any other e-ink or low-power browser):
+A "Kindle Home" page of light games for the Kindle web browser (and any other e-ink or low-power browser):
 
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
+- **Ô Ăn Quan**: Vietnamese Mandarin Square Capturing, against the computer or a friend
 - **Minesweeper**: Easy, Medium and Hard boards, with Dig and Flag modes for touch screens
 - **2048**
 

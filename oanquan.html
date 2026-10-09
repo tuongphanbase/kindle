@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kindle O An Quan</title>
+<style>
+html,body{margin:0;padding:0;background:#fff;color:#171717;font-family:Arial,Helvetica,sans-serif}
+body{-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+#page{max-width:820px;margin:0 auto;padding:18px 18px 14px;text-align:center;position:relative;background:#fff}
+
+/* Player's captured stones: no box, no score text, just real-looking pebbles. */
+.playerCaptured{margin:0;text-align:left;min-height:78px;padding:2px 20px 6px;background:#fff}
+.playerCaptured .trayTitle{font-family:Georgia,"Times New Roman",serif;font-size:26px;font-weight:normal;line-height:1.15;margin:0 0 9px;color:#171717}
+.playerCaptured .trayStones{min-height:32px;line-height:17px;text-align:left;overflow:hidden}
+.playerCaptured.active .trayTitle{font-weight:bold}
+
+/* Yellow gravel-like sỏi. Keep a solid-color fallback for old Kindle browsers. */
+.stone,.scoreStone,.carryPebble,.mandarin{
+  display:inline-block;
+  background:#d6a02c;
+  background:radial-gradient(circle at 35% 30%,#f3cf69 0%,#dda932 58%,#b9841f 100%);
+  border:1px solid #9a711f;
+  vertical-align:middle;
+}
+.stone,.scoreStone{width:14px;height:10px;margin:2px;border-radius:58% 42% 54% 46%}
+.stone.p2,.scoreStone.p2{width:12px;height:9px;border-radius:45% 55% 48% 52%;transform:rotate(-8deg)}
+.stone.p3,.scoreStone.p3{width:15px;height:10px;border-radius:52% 48% 60% 40%;transform:rotate(7deg);background-color:#e0ae37}
+.stone.p4,.scoreStone.p4{width:13px;height:11px;border-radius:60% 40% 43% 57%;transform:rotate(-4deg);background-color:#c99528}
+
+/* The board is drawn directly on the blank page, like a simple chalk/pencil game board. */
+#boardWrap{position:relative;margin:8px 0 16px;padding:7px 9px;border:2px solid #202020;border-radius:58px;background:#fff}
+#boardWrap:after{content:"";position:absolute;left:14%;right:14%;top:50%;height:1px;background:#333;z-index:0;pointer-events:none}
+#board{position:relative;z-index:1;width:100%;table-layout:fixed;border-collapse:separate;border-spacing:8px 10px;background:transparent;margin:0;padding:0}
+.pit{height:92px;vertical-align:middle;text-align:center;background:#fff;cursor:pointer;padding:5px 2px;overflow:hidden}
+.small{width:14%;border:2px solid #222;border-radius:50%}
+.quan{width:15%;height:204px;border:0;border-radius:48%;background:#fff}
+#pit1,#pit8{border-radius:48% 52% 50% 50%}
+#pit2,#pit10{border-radius:52% 48% 47% 53%}
+#pit3,#pit9{border-radius:49% 51% 54% 46%}
+#pit4,#pit11{border-radius:53% 47% 51% 49%}
+#pit5,#pit7{border-radius:47% 53% 49% 51%}
+.stones{display:block;text-align:center;min-height:58px;padding:13px 1px 1px;line-height:14px}
+.quan .stones{min-height:84px;padding-top:24px}
+
+/* Quan is simply one larger sỏi. No word, icon, or house. */
+.mandarin{width:38px;height:27px;border-radius:56% 44% 51% 49%;border-width:1px;margin-top:3px;box-shadow:none}
+.hide{visibility:hidden}
+.sel{outline:3px solid #111;outline-offset:2px}
+.legal{background:#fff}
+.flash{background:#f7f1df}
+
+/* Simple hand animation, with the carried pebble matching the board stones. */
+#hand{position:absolute;left:0;top:0;width:76px;height:58px;z-index:30;display:none;pointer-events:none;box-sizing:border-box;transition:left .45s linear,top .45s linear}
+#hand svg{width:100%;height:100%;overflow:visible}
+.handOutline{fill:#fff;stroke:#222;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.handShade{fill:#fff;stroke:none}
+#handOpen,#handClosed{display:none}
+.handEmpty #handOpen,.handPicking #handOpen{display:block}
+.handHolding #handClosed,.handDropping #handClosed{display:block}
+.carryPebble{fill:#d6a02c;stroke:#9a711f;stroke-width:1.5;display:none}
+#dropPebble{display:none}.handDropping #dropPebble{display:block}
+/* Visible sỏi carried in the closed hand. One pebble disappears after every drop. */
+#handCarry{position:absolute;left:-10px;width:96px;bottom:41px;z-index:35;text-align:center;line-height:8px;display:none;pointer-events:none}
+.handHolding #handCarry,.handDropping #handCarry,.handPicking #handCarry{display:block}
+.handCarryStone{display:inline-block;width:9px;height:7px;margin:0 1px 1px;background:#d6a02c;background:radial-gradient(circle at 35% 30%,#f3cf69 0%,#dda932 58%,#b9841f 100%);border:1px solid #9a711f;border-radius:58% 42% 54% 46%;vertical-align:middle}
+.handCarryStone.c2{width:8px;height:6px;border-radius:45% 55% 48% 52%;transform:rotate(-8deg)}
+.handCarryStone.c3{width:10px;height:7px;border-radius:52% 48% 60% 40%;transform:rotate(7deg);background-color:#e0ae37}
+.handCarryStone.c4{width:8px;height:7px;border-radius:60% 40% 43% 57%;transform:rotate(-4deg);background-color:#c99528}
+
+/* Bottom controls mimic the approved sketch: line, New Game, status, arrows. */
+#controlArea{border-top:1px solid #222;padding-top:10px;margin-top:6px}
+#controls{width:100%;border-collapse:collapse;table-layout:fixed}
+#controls td{vertical-align:middle;padding:2px 5px}
+#controls .leftControl{width:27%;text-align:left}
+#controls .centerControl{width:46%;text-align:center}
+#controls .rightControl{width:27%;text-align:right}
+.btn,.move{background:#fff;color:#171717;border:2px solid #222;border-radius:8px;min-height:43px;font-family:Arial,Helvetica,sans-serif;font-size:15px;cursor:pointer}
+.btn{padding:7px 12px;margin:2px 0}
+#undoButton{font-size:12px;min-height:32px;padding:4px 9px;border-width:1px;margin-left:4px}
+#status{min-height:23px;font-family:Georgia,"Times New Roman",serif;font-size:20px;font-weight:normal;margin:0 0 4px;padding:0}
+#selection{min-height:18px;font-size:13px;margin:0;color:#333}
+.directionLabel{font-family:Georgia,"Times New Roman",serif;font-size:15px;margin:0 0 4px;text-align:center}
+#movePanel{white-space:nowrap}
+.move{width:48px;height:48px;min-height:48px;padding:0;margin-left:5px;font-size:28px;line-height:40px}
+.move[disabled]{color:#aaa;border-color:#aaa}
+
+/* Keep mode / AI controls available without dominating the screen. */
+#options{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:10px;color:#555;text-align:center}
+#options label{margin-left:8px}
+#options select{font-family:Arial,Helvetica,sans-serif;font-size:11px;background:#fff;color:#222;border:1px solid #999;padding:3px 4px;margin-left:2px}
+
+@media screen and (max-width:650px){
+  #page{padding:10px 6px 8px}
+  .playerCaptured{min-height:64px;padding:1px 15px 4px}
+  .playerCaptured .trayTitle{font-size:22px;margin-bottom:6px}
+  .playerCaptured .trayStones{min-height:27px;line-height:14px}
+  .stone,.scoreStone{width:12px;height:9px;margin:1px}
+  .stone.p2,.scoreStone.p2{width:10px;height:8px}.stone.p3,.scoreStone.p3{width:13px;height:9px}.stone.p4,.scoreStone.p4{width:11px;height:9px}
+  #boardWrap{margin:6px 0 12px;padding:4px 5px;border-radius:45px}
+  #board{border-spacing:4px 6px}
+  .pit{height:79px;padding:2px 1px}.quan{height:170px}
+  .stones{min-height:48px;padding-top:9px;line-height:12px}.quan .stones{min-height:65px;padding-top:17px}
+  .mandarin{width:32px;height:23px}
+  #controls td{padding:2px 2px}
+  .btn{font-size:13px;padding:6px 8px;min-height:39px}
+  #undoButton{display:block;margin:3px 0 0}
+  #status{font-size:17px}.directionLabel{font-size:13px}#selection{font-size:11px}
+  .move{width:43px;height:43px;min-height:43px;font-size:24px;margin-left:2px}
+  #hand{width:66px;height:50px}
+}
+
+@media screen and (max-width:430px){
+  #page{padding-left:3px;padding-right:3px}
+  .playerCaptured{padding-left:10px;padding-right:10px;min-height:58px}.playerCaptured .trayTitle{font-size:19px}
+  #boardWrap{padding:3px;border-radius:38px;border-width:2px}
+  #board{border-spacing:2px 5px}
+  .pit{height:70px}.small{border-width:1.5px}.quan{height:151px}
+  .stones{min-height:42px;padding-top:7px;line-height:10px}
+  .stone,.scoreStone{width:10px;height:7px;border-width:1px;margin:1px}.stone.p2,.scoreStone.p2{width:9px;height:7px}.stone.p3,.scoreStone.p3{width:11px;height:8px}.stone.p4,.scoreStone.p4{width:10px;height:8px}
+  .mandarin{width:29px;height:21px}
+  #controls .leftControl{width:25%}#controls .centerControl{width:48%}#controls .rightControl{width:27%}
+  .btn{font-size:11px;padding:5px 6px}.move{width:39px;height:39px;min-height:39px;font-size:22px}
+  #status{font-size:15px}#selection{font-size:9px}.directionLabel{font-size:11px}
+  #options{font-size:9px}#options select{font-size:9px;padding:2px}
+}
+
+</style>
+</head>
+<body onload="initGame()">
+<div id="page">
+  <div style="text-align:left;margin-bottom:6px"><a href="index.html" style="display:inline-block;color:#000;font-size:15px;padding:4px 8px;border:2px solid #000;text-decoration:none;font-family:Georgia,serif">&larr; Home</a></div>
+  <div id="capturedTopSide" class="playerCaptured">
+    <div class="trayTitle"><span id="topName">Computer</span></div>
+    <div id="capturedTop" class="trayStones"></div>
+  </div>
+
+  <div id="boardWrap">
+    <table id="board" cellspacing="0" cellpadding="0">
+      <tr>
+        <td id="pit0" class="pit quan" rowspan="2" onclick="pitClick(0)"><div id="stones0" class="stones"></div><div id="mandarin0" class="mandarin" aria-label="Quan stone"></div></td>
+        <td id="pit1" class="pit small" onclick="pitClick(1)"><div id="stones1" class="stones"></div></td>
+        <td id="pit2" class="pit small" onclick="pitClick(2)"><div id="stones2" class="stones"></div></td>
+        <td id="pit3" class="pit small" onclick="pitClick(3)"><div id="stones3" class="stones"></div></td>
+        <td id="pit4" class="pit small" onclick="pitClick(4)"><div id="stones4" class="stones"></div></td>
+        <td id="pit5" class="pit small" onclick="pitClick(5)"><div id="stones5" class="stones"></div></td>
+        <td id="pit6" class="pit quan" rowspan="2" onclick="pitClick(6)"><div id="stones6" class="stones"></div><div id="mandarin6" class="mandarin" aria-label="Quan stone"></div></td>
+      </tr>
+      <tr>
+        <td id="pit11" class="pit small" onclick="pitClick(11)"><div id="stones11" class="stones"></div></td>
+        <td id="pit10" class="pit small" onclick="pitClick(10)"><div id="stones10" class="stones"></div></td>
+        <td id="pit9" class="pit small" onclick="pitClick(9)"><div id="stones9" class="stones"></div></td>
+        <td id="pit8" class="pit small" onclick="pitClick(8)"><div id="stones8" class="stones"></div></td>
+        <td id="pit7" class="pit small" onclick="pitClick(7)"><div id="stones7" class="stones"></div></td>
+      </tr>
+    </table>
+  </div>
+
+  <div id="capturedBottomSide" class="playerCaptured">
+    <div class="trayTitle"><span id="bottomName">You</span></div>
+    <div id="capturedBottom" class="trayStones"></div>
+  </div>
+
+  <div id="controlArea">
+    <table id="controls">
+      <tr>
+        <td class="leftControl">
+          <input class="btn" type="button" value="New Game" onclick="newGame()">
+          <input id="undoButton" class="btn" type="button" value="Undo" onclick="undoMove()">
+        </td>
+        <td class="centerControl">
+          <div id="status">Loading...</div>
+          <div id="selection">Choose a cell to play</div>
+        </td>
+        <td class="rightControl">
+          <div class="directionLabel">Direction</div>
+          <div id="movePanel">
+            <input id="ccwButton" class="move" type="button" value="←" aria-label="Move left" onclick="directionArrow(-1)" disabled>
+            <input id="cwButton" class="move" type="button" value="→" aria-label="Move right" onclick="directionArrow(1)" disabled>
+          </div>
+        </td>
+      </tr>
+    </table>
+    <div id="options">
+      <label for="mode">Mode</label>
+      <select id="mode" onchange="newGame()"><option value="computer" selected>Computer</option><option value="two">2 Players</option></select>
+      <label for="level">AI</label>
+      <select id="level"><option value="1">Easy</option><option value="2" selected>Normal</option><option value="3">Hard</option></select>
+    </div>
+  </div>
+
+  <div id="hand" class="handEmpty"><div id="handCarry" aria-hidden="true"></div><svg viewBox="0 0 90 68" aria-hidden="true"><g id="handOpen"><path class="handShade" d="M20 55 C14 55 10 50 10 44 V23 C10 19 13 16 17 16 C21 16 24 19 24 23 V15 C24 10 27 7 31 7 C35 7 38 10 38 15 V12 C38 8 41 5 45 5 C49 5 52 8 52 12 V15 C52 10 55 7 59 7 C63 7 66 10 66 15 V21 C66 17 69 14 73 14 C77 14 80 17 80 21 V39 C80 48 73 55 64 55 Z"></path><path class="handOutline" d="M20 55 C14 55 10 50 10 44 V23 C10 19 13 16 17 16 C21 16 24 19 24 23 V15 C24 10 27 7 31 7 C35 7 38 10 38 15 V12 C38 8 41 5 45 5 C49 5 52 8 52 12 V15 C52 10 55 7 59 7 C63 7 66 10 66 15 V21 C66 17 69 14 73 14 C77 14 80 17 80 21 V39 C80 48 73 55 64 55 Z"></path></g><g id="handClosed"><path class="handShade" d="M21 44 C21 34 28 27 39 24 L53 20 C61 18 69 21 74 27 C78 31 79 37 77 43 C74 51 66 56 57 57 L40 58 C29 58 22 53 21 44 Z"></path><path class="handOutline" d="M21 44 C21 34 28 27 39 24 L53 20 C61 18 69 21 74 27 C78 31 79 37 77 43 C74 51 66 56 57 57 L40 58 C29 58 22 53 21 44 Z"></path><path class="handOutline" d="M31 34 C36 31 42 29 48 28"></path><path class="handOutline" d="M29 41 C36 38 44 36 52 35"></path><path class="handOutline" d="M31 48 C39 45 48 43 57 42"></path><path class="handOutline" d="M58 26 C64 27 69 30 72 35"></path><circle id="dropPebble" class="carryPebble" cx="70" cy="49" r="4"></circle></g></svg></div>
+</div>
+<script>
+"use strict";
+var state=null,selectedPit=-1,historyStack=[],aiBusy=false,animating=false,flashPit=-1,handHolding=0,handMode="empty";var TOP=0,BOTTOM=1;
+function initGame(){newGame()}
+function initialState(){return{seeds:[0,5,5,5,5,5,0,5,5,5,5,5],mandarins:[true,false,false,false,false,false,true,false,false,false,false,false],scores:[0,0],player:BOTTOM,over:false,message:""}}
+function cloneState(s){return{seeds:s.seeds.slice(0),mandarins:s.mandarins.slice(0),scores:s.scores.slice(0),player:s.player,over:s.over,message:s.message}}
+function newGame(){state=initialState();selectedPit=-1;historyStack=[];aiBusy=false;animating=false;flashPit=-1;handHolding=0;handMode="empty";hideHand();prepareTurn(state);render()}
+function isQuan(i){return i===0||i===6}
+function nextIndex(i,d){var n=i+d;if(n>11)n=0;if(n<0)n=11;return n}
+function ownsPit(p,i){return p===TOP?(i>=1&&i<=5):(i>=7&&i<=11)}
+function sidePits(p){return p===TOP?[1,2,3,4,5]:[7,8,9,10,11]}
+function sideEmpty(s,p){var a=sidePits(p),i;for(i=0;i<a.length;i++)if(s.seeds[a[i]]>0)return false;return true}
+function refillSide(s,p){if(s.over||!sideEmpty(s,p))return;var a=sidePits(p),i;for(i=0;i<a.length;i++)s.seeds[a[i]]=1;s.scores[p]-=5;s.message=(p===BOTTOM?"Bottom":"Top")+" side was refilled."}
+function pitValue(s,i){return s.seeds[i]+(s.mandarins[i]?5:0)}
+function canCapturePit(s,i){if(pitValue(s,i)<=0)return false;if(isQuan(i)&&s.seeds[i]<5)return false;return true}
+function boardSeedCount(s){var total=0,i;for(i=0;i<12;i++)total+=s.seeds[i];return total}
+function finishGameIfNeeded(s){if(s.over||boardSeedCount(s)>0)return;s.over=true;if(s.scores[BOTTOM]>s.scores[TOP])s.message="Game over - You win.";else if(s.scores[TOP]>s.scores[BOTTOM])s.message="Game over - Computer wins.";else s.message="Game over - Draw."}
+function prepareTurn(s){finishGameIfNeeded(s);if(!s.over)refillSide(s,s.player)}
+function legalMoves(s){var m=[],a=sidePits(s.player),i;if(s.over)return m;for(i=0;i<a.length;i++)if(s.seeds[a[i]]>0){m.push({pit:a[i],dir:-1});m.push({pit:a[i],dir:1})}return m}
+function applyMove(s,pit,dir){if(s.over||isQuan(pit)||!ownsPit(s.player,pit)||s.seeds[pit]<=0)return false;var player=s.player,hand=s.seeds[pit],pos=pit,next,target,captured=0,guard=0,gap;s.seeds[pit]=0;while(guard<5000){guard++;while(hand>0){pos=nextIndex(pos,dir);s.seeds[pos]++;hand--}next=nextIndex(pos,dir);if(!isQuan(next)&&s.seeds[next]>0){hand=s.seeds[next];s.seeds[next]=0;pos=next;continue}if(s.seeds[next]===0&&!s.mandarins[next]){gap=next;while(true){target=nextIndex(gap,dir);if(!canCapturePit(s,target))break;captured+=s.seeds[target];s.scores[player]+=s.seeds[target];s.seeds[target]=0;if(s.mandarins[target]){s.scores[player]+=5;captured+=5;s.mandarins[target]=false}gap=nextIndex(target,dir);if(s.seeds[gap]!==0||s.mandarins[gap])break}}break}s.player=1-s.player;s.message=captured>0?((player===BOTTOM?"Bottom":"Top")+" captured stones."):"";finishGameIfNeeded(s);if(!s.over)refillSide(s,s.player);return true}
+function computeMovePlan(s,pit,dir){if(s.over||isQuan(pit)||!ownsPit(s.player,pit)||s.seeds[pit]<=0)return null;var work=cloneState(s),actions=[],player=work.player,hand=work.seeds[pit],pos=pit,next,target,guard=0,gap;actions.push({type:"pickup",pit:pit,count:hand});work.seeds[pit]=0;while(guard<5000){guard++;while(hand>0){pos=nextIndex(pos,dir);work.seeds[pos]++;actions.push({type:"drop",pit:pos});hand--}next=nextIndex(pos,dir);if(!isQuan(next)&&work.seeds[next]>0){hand=work.seeds[next];actions.push({type:"pickup",pit:next,count:hand});work.seeds[next]=0;pos=next;continue}if(work.seeds[next]===0&&!work.mandarins[next]){gap=next;while(true){target=nextIndex(gap,dir);if(!canCapturePit(work,target))break;actions.push({type:"capture",pit:target,seeds:work.seeds[target],mandarin:work.mandarins[target]});work.seeds[target]=0;if(work.mandarins[target])work.mandarins[target]=false;gap=nextIndex(target,dir);if(work.seeds[gap]!==0||work.mandarins[gap])break}}break}var result=cloneState(s);applyMove(result,pit,dir);return{actions:actions,result:result,player:player}}
+function getDropDelay(){return 2000}
+function getPickupDelay(){return 500}
+function getCaptureDelay(){return 1200}
+function showHand(){var h=document.getElementById("hand");if(h.style.display!=="block")h.style.display="block"}
+function hideHand(){var h=document.getElementById("hand");if(h)h.style.display="none"}
+function renderHandCarry(){var box=document.getElementById("handCarry"),html="",i,c;if(!box)return;for(i=0;i<handHolding;i++){c=(i%4)+1;html+='<span class="handCarryStone c'+c+'"></span>'}box.innerHTML=html}
+function updateHand(){var h=document.getElementById("hand");if(!h)return;renderHandCarry();if(h.style.display==="none")return;var cls=(handHolding>0?"handHolding":"handEmpty");if(handMode==="pickup")cls+=" handPicking";else if(handMode==="drop")cls+=" handDropping";h.className=cls}
+function getPitHandPosition(pit){var cell=document.getElementById("pit"+pit),page=document.getElementById("page");var r=cell.getBoundingClientRect(),pr=page.getBoundingClientRect();return{left:(r.left-pr.left)+(r.width/2)-41,top:(r.top-pr.top)+(r.height/2)-31}}
+function placeHand(left,top){var h=document.getElementById("hand");h.style.left=left+"px";h.style.top=top+"px";updateHand()}
+function moveHandToPit(pit,callback){var h=document.getElementById("hand");var pos=getPitHandPosition(pit);var duration=500;showHand();updateHand();if(h.style.display==="block"&&h.style.left!==""){h.style.left=pos.left+"px";h.style.top=pos.top+"px";setTimeout(callback,duration)}else{placeHand(pos.left-80,pos.top+10);showHand();setTimeout(function(){h.style.left=pos.left+"px";h.style.top=pos.top+"px";setTimeout(callback,duration)},30)}}
+function saveHistory(){historyStack.push(cloneState(state));if(historyStack.length>30)historyStack.shift()}
+function undoMove(){if(aiBusy||animating||historyStack.length===0)return;var mode=document.getElementById("mode").value;state=historyStack.pop();if(mode==="computer"&&state.player===TOP&&historyStack.length>0)state=historyStack.pop();selectedPit=-1;flashPit=-1;handHolding=0;handMode="empty";hideHand();render()}
+function pitClick(pit){if(!state||state.over||aiBusy||animating)return;if(document.getElementById("mode").value==="computer"&&state.player===TOP)return;if(isQuan(pit)||!ownsPit(state.player,pit)||state.seeds[pit]<=0){selectedPit=-1;render();return}selectedPit=pit;render()}
+function directionArrow(visualDir){if(!state)return;var dir;if(state.player===BOTTOM)dir=visualDir<0?1:-1;else dir=visualDir<0?-1:1;directionClick(dir)}
+function directionClick(dir){if(selectedPit<0||!state||state.over||aiBusy||animating)return;if(!ownsPit(state.player,selectedPit)||state.seeds[selectedPit]<=0){selectedPit=-1;render();return}saveHistory();startAnimatedMove(selectedPit,dir,function(){if(!state.over&&document.getElementById("mode").value==="computer"&&state.player===TOP){aiBusy=true;render();setTimeout(computerMove,500)}})}
+function startAnimatedMove(pit,dir,done){var plan=computeMovePlan(state,pit,dir),actions,idx,currentPlayer;if(!plan)return;actions=plan.actions;idx=0;currentPlayer=state.player;selectedPit=-1;animating=true;state.message=(currentPlayer===BOTTOM?"Bottom":"Top")+" is moving...";function step(){var a,pts,delay;if(idx>=actions.length){state=plan.result;animating=false;flashPit=-1;handHolding=0;handMode="empty";hideHand();render();if(done)done();return}a=actions[idx++];moveHandToPit(a.pit,function(){flashPit=a.pit;if(a.type==="pickup"){handMode="pickup";state.seeds[a.pit]=0;handHolding=a.count;state.message=(currentPlayer===BOTTOM?"Bottom":"Top")+" picked up the stones.";delay=getPickupDelay();setTimeout(function(){handMode="hold";updateHand();render()},120)}else if(a.type==="drop"){handMode="drop";state.seeds[a.pit]++;if(handHolding>0)handHolding--;state.message=(currentPlayer===BOTTOM?"Bottom":"Top")+" dropped 1 stone.";delay=getDropDelay();setTimeout(function(){handMode=handHolding>0?"hold":"empty";updateHand();render()},300)}else if(a.type==="capture"){handMode="pickup";pts=a.seeds+(a.mandarin?5:0);state.scores[currentPlayer]+=pts;state.seeds[a.pit]=0;if(a.mandarin)state.mandarins[a.pit]=false;handHolding=0;state.message=(currentPlayer===BOTTOM?"Bottom":"Top")+" captured the stones.";delay=getCaptureDelay();setTimeout(function(){handMode="empty";updateHand();render()},250)}updateHand();render();setTimeout(step,delay)})}step()}
+function evaluate(s){var v=(s.scores[TOP]-s.scores[BOTTOM])*10,t=sidePits(TOP),b=sidePits(BOTTOM),i;for(i=0;i<t.length;i++)v+=s.seeds[t[i]];for(i=0;i<b.length;i++)v-=s.seeds[b[i]];if(s.over){if(s.scores[TOP]>s.scores[BOTTOM])v+=10000;else if(s.scores[BOTTOM]>s.scores[TOP])v-=10000}return v}
+function minimax(s,depth,alpha,beta){if(depth<=0||s.over)return evaluate(s);var moves=legalMoves(s),max=s.player===TOP,best=max?-999999:999999,i,c,score;if(moves.length===0)return evaluate(s);for(i=0;i<moves.length;i++){c=cloneState(s);applyMove(c,moves[i].pit,moves[i].dir);score=minimax(c,depth-1,alpha,beta);if(max){if(score>best)best=score;if(best>alpha)alpha=best}else{if(score<best)best=score;if(best<beta)beta=best}if(beta<=alpha)break}return best}
+function chooseComputerMove(){var moves=legalMoves(state);if(moves.length===0)return null;var depth=parseInt(document.getElementById("level").value,10);if(isNaN(depth)||depth<1)depth=1;var best=moves[0],bestScore=-999999,i,c,score;for(i=0;i<moves.length;i++){c=cloneState(state);applyMove(c,moves[i].pit,moves[i].dir);score=minimax(c,depth-1,-999999,999999);if(score>bestScore){bestScore=score;best=moves[i]}}return best}
+function computerMove(){var m;if(!state||state.over||state.player!==TOP){aiBusy=false;render();return}m=chooseComputerMove();if(m){saveHistory();startAnimatedMove(m.pit,m.dir,function(){aiBusy=false;render()})}else{aiBusy=false;render()}}
+function renderStones(id,count){var html="",i,c;for(i=0;i<count;i++){c=(i%4)+1;html+='<span class="stone p'+c+'"></span>'}document.getElementById("stones"+id).innerHTML=html}
+function renderCaptured(id,score){var html="",i,n=Math.max(0,score),c;for(i=0;i<n;i++){c=(i%4)+1;html+='<span class="scoreStone p'+c+'"></span>'}document.getElementById(id).innerHTML=html}
+function render(){if(!state)return;updateHand();var i,p,c,status,enabled,mode=document.getElementById("mode").value;for(i=0;i<12;i++){renderStones(i,state.seeds[i]);p=document.getElementById("pit"+i);c="pit "+(isQuan(i)?"quan":"small");if(i===selectedPit)c+=" sel";if(i===flashPit)c+=" flash";if(!isQuan(i)&&ownsPit(state.player,i)&&state.seeds[i]>0&&!state.over&&!aiBusy&&!animating)c+=" legal";p.className=c}document.getElementById("mandarin0").className=state.mandarins[0]?"mandarin":"mandarin hide";document.getElementById("mandarin6").className=state.mandarins[6]?"mandarin":"mandarin hide";renderCaptured("capturedTop",state.scores[TOP]);renderCaptured("capturedBottom",state.scores[BOTTOM]);document.getElementById("capturedTopSide").className="playerCaptured"+(!state.over&&state.player===TOP?" active":"");document.getElementById("capturedBottomSide").className="playerCaptured"+(!state.over&&state.player===BOTTOM?" active":"");document.getElementById("topName").innerHTML=mode==="computer"?"Computer":"Top";document.getElementById("bottomName").innerHTML=mode==="computer"?"You":"Bottom";if(state.over)status=state.message;else if(aiBusy)status="Computer's turn";else if(animating)status="Playing...";else if(state.player===BOTTOM)status=mode==="computer"?"Your turn":"Bottom's turn";else status=mode==="computer"?"Computer's turn":"Top's turn";document.getElementById("status").innerHTML=status;enabled=selectedPit>=0&&!state.over&&!aiBusy&&!animating;document.getElementById("cwButton").disabled=!enabled;document.getElementById("ccwButton").disabled=!enabled;document.getElementById("selection").innerHTML=selectedPit>=0?"Choose a direction":(state.over?"Press New Game to play again":(animating?"":"Choose a cell to play"))}
+</script>
+</body>
+</html>
