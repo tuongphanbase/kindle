@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Tat Den</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .lo { border-collapse: separate; border-spacing: 5px; margin: 0 auto; }
+  .lo td { padding: 0; border: 2px solid #000; background: #fff; border-radius: 6px; -webkit-border-radius: 6px; text-align: center; vertical-align: middle; font-weight: bold; }
+  .lo td.on { background: #000; }
+  .lo td.hint { background: #999; }
+  .lo td.on.hint { background: #555; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">T&#7855;t &#272;&egrave;n</span></div>
+<div class="controls" id="sizes">
+  <button data-v="4">4&times;4</button><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">Next Puzzle</button><button id="resetBtn">Restart</button><button id="hintBtn">Hint</button>
+</div>
+<p class="help">Lights Out. Black squares are lights that are on. Tapping a square switches it <b>and</b> the squares
+directly above, below, left and right of it. Switch every light off! Each puzzle gets a little harder.
+Hint shades a square that is part of the solution.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-tatden';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '5', levels = saved.levels || {}, g = saved.g || null, hint = -1;
+
+  function press(a, p, n) {
+    var r = Math.floor(p / n), c = p % n;
+    a[p] ^= 1;
+    if (r > 0) a[p - n] ^= 1;
+    if (r < n - 1) a[p + n] ^= 1;
+    if (c > 0) a[p - 1] ^= 1;
+    if (c < n - 1) a[p + 1] ^= 1;
+  }
+  // Puzzles are made by pressing random squares on a dark board, so they can always be solved.
+  function newGame() {
+    var n = parseInt(size, 10), lv = levels[size] || 1, a = [], i;
+    for (i = 0; i < n * n; i++) a.push(0);
+    var presses = Math.min(n * n - 2, lv + 2), order = [];
+    for (i = 0; i < n * n; i++) order.push(i);
+    KG.shuffle(order);
+    for (i = 0; i < presses; i++) press(a, order[i], n);
+    var lit = 0;
+    for (i = 0; i < a.length; i++) lit += a[i];
+    if (!lit) { newGame(); return; }
+    g = { n: n, a: a, start: a.slice(), moves: 0, done: false, lv: lv };
+    hint = -1;
+  }
+  if (!g || String(g.n) !== size) newGame();
+
+  // Solve over GF(2) with Gaussian elimination; returns presses (1/0) or null.
+  function solve() {
+    var n = g.n, N = n * n, M = [], i, j, k, row = 0, piv = [];
+    for (i = 0; i < N; i++) {
+      var eq = [];
+      for (j = 0; j < N; j++) eq.push(0);
+      var tmp = []; for (j = 0; j < N; j++) tmp.push(0);
+      press(tmp, i, n);
+      for (j = 0; j < N; j++) if (tmp[j]) eq[j] = 1; // pressing i affects j (symmetric)
+      eq.push(g.a[i]);
+      M.push(eq);
+    }
+    for (k = 0; k < N && row < N; k++) {
+      var p = -1;
+      for (i = row; i < N; i++) if (M[i][k]) { p = i; break; }
+      if (p < 0) continue;
+      var t = M[p]; M[p] = M[row]; M[row] = t;
+      for (i = 0; i < N; i++) if (i !== row && M[i][k]) for (j = k; j <= N; j++) M[i][j] ^= M[row][j];
+      piv.push(k); row++;
+    }
+    for (i = row; i < N; i++) if (M[i][N]) return null;
+    var x = [];
+    for (i = 0; i < N; i++) x.push(0);
+    for (i = 0; i < piv.length; i++) x[piv[i]] = M[i][N];
+    return x;
+  }
+
+  function render() {
+    var lit = 0, i;
+    for (i = 0; i < g.a.length; i++) lit += g.a[i];
+    KG.text(statusEl, g.done ? 'All lights off in ' + g.moves + ' moves! Tap Next Puzzle.' : 'Puzzle ' + g.lv + ' · Lights on: ' + lit + ' · Moves: ' + g.moves);
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 560);
+    var S = Math.floor((W - 5 * (g.n + 1)) / g.n) - 4, h = ['<table class="lo">'];
+    for (i = 0; i < g.a.length; i++) {
+      if (i % g.n === 0) h.push('<tr>');
+      h.push('<td data-sq="' + i + '" class="' + (g.a[i] ? 'on' : '') + (i === hint ? ' hint' : '') + '" style="width:' + S + 'px;height:' + S + 'px"></td>');
+      if (i % g.n === g.n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, levels: levels, g: g });
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || g.done) return;
+    press(g.a, parseInt(v, 10), g.n);
+    g.moves++; hint = -1;
+    var lit = 0;
+    for (var i = 0; i < g.a.length; i++) lit += g.a[i];
+    if (!lit) { g.done = true; levels[size] = g.lv + 1; }
+    render();
+  };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.$('resetBtn').onclick = function () { g.a = g.start.slice(); g.moves = 0; g.done = false; hint = -1; render(); };
+  KG.$('hintBtn').onclick = function () {
+    if (g.done) return;
+    var x = solve();
+    if (!x) return;
+    for (var i = 0; i < x.length; i++) if (x[i]) { hint = i; break; }
+    render();
+  };
+  KG.buttonGroup('sizes', size, function (v) { size = v; newGame(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

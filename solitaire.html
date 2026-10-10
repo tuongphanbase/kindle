@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Solitaire</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #table { position: relative; margin: 0 auto; }
+  .pile { position: absolute; border: 2px dashed #888; border-radius: 6px; -webkit-border-radius: 6px; text-align: center; color: #888; }
+  .card { position: absolute; border: 2px solid #000; border-radius: 6px; -webkit-border-radius: 6px; background: #fff; font-family: Georgia, serif; overflow: hidden; }
+  .card.red { background: #ddd; }
+  .card.back { background: #888; border-color: #000; }
+  .card.back .pat { position: absolute; left: 4px; top: 4px; right: 4px; bottom: 4px; border: 1px solid #fff; border-radius: 3px; -webkit-border-radius: 3px; }
+  .card.sel { background: #000; color: #fff; }
+  .card .lbl { position: absolute; left: 3px; top: 1px; font-weight: bold; white-space: nowrap; }
+  .card .big { position: absolute; left: 0; right: 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">X&#7871;p B&agrave;i</span></div>
+<div class="controls"><span id="draws"><button data-v="1">Draw 1</button><button data-v="3">Draw 3</button></span>
+  &nbsp; Suits: <span id="suits"><button data-v="S">&#9824;&#9825;</button><button data-v="L">Letters</button></span>
+</div>
+<div id="status" class="status"></div>
+<div id="table"></div>
+<div class="controls">
+  <button id="newBtn">New Deal</button><button id="undoBtn">Undo</button><button id="autoBtn">Auto Finish</button>
+</div>
+<p class="help">Klondike Solitaire. Build the four piles at the top right from Ace to King in one suit. In the seven
+columns, stack cards downwards in alternating colours (red cards are grey with hollow suits). Tap a card to pick it
+(and the cards on top of it) up, then tap where it should go &mdash; or tap it again to move it somewhere automatically.
+Tap the deck at the top left to turn over cards. Only a King can go into an empty column.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-solitaire', RANKS = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  var SUIT_SYM = ['&#9824;', '&#9825;', '&#9826;', '&#9827;'], SUIT_LET = ['S', 'H', 'D', 'C'];
+  var tableEl = KG.$('table'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var draw = saved.draw || '1', suits = saved.suits || 'S', g = saved.g || null, hist = saved.hist || [], sel = null, msg = '';
+
+  function suit(c) { return Math.floor(c / 13); }
+  function rank(c) { return c % 13 + 1; }
+  function red(c) { return suit(c) === 1 || suit(c) === 2; }
+  function top(p) { var a = g.p[p]; return a.length ? a[a.length - 1] : null; }
+
+  // Piles: 0 stock, 1 waste, 2-5 foundations, 6-12 tableau. Each card is { c: 0..51, u: face up }.
+  function deal() {
+    var deck = [], i, k;
+    for (i = 0; i < 52; i++) deck.push(i);
+    KG.shuffle(deck);
+    var p = [];
+    for (i = 0; i < 13; i++) p.push([]);
+    for (k = 0; k < 7; k++) for (i = 0; i <= k; i++) p[6 + k].push({ c: deck.pop(), u: i === k });
+    while (deck.length) p[0].push({ c: deck.pop(), u: false });
+    g = { p: p, moves: 0, won: false };
+    hist = []; sel = null; msg = '';
+  }
+  if (!g) deal();
+
+  function snapshot() { hist.push(JSON.stringify(g)); if (hist.length > 60) hist.shift(); }
+  function flipTops() {
+    for (var i = 6; i < 13; i++) { var t = top(i); if (t && !t.u) t.u = true; }
+  }
+  function canFound(card, f) {
+    var t = top(f);
+    return t ? (suit(t.c) === suit(card.c) && rank(card.c) === rank(t.c) + 1) : rank(card.c) === 1;
+  }
+  function canTab(card, col) {
+    var t = top(col);
+    return t ? (t.u && red(t.c) !== red(card.c) && rank(card.c) === rank(t.c) - 1) : rank(card.c) === 13;
+  }
+  function checkWin() {
+    var n = 0;
+    for (var f = 2; f < 6; f++) n += g.p[f].length;
+    if (n === 52) g.won = true;
+  }
+  // Move cards from (p, i) to the end of pile `to` if legal.
+  function tryMove(s, to) {
+    var from = g.p[s.p], card = from[s.i], count = from.length - s.i;
+    if (to === s.p || to < 2) return false;
+    if (to < 6) { if (count !== 1 || !canFound(card, to)) return false; }
+    else if (!canTab(card, to)) return false;
+    snapshot();
+    var moving = from.splice(s.i, count);
+    for (var k = 0; k < moving.length; k++) g.p[to].push(moving[k]);
+    g.moves++;
+    flipTops(); checkWin();
+    return true;
+  }
+  function autoMove(s) {
+    var to, from = g.p[s.p];
+    if (s.i === from.length - 1) for (to = 2; to < 6; to++) if (tryMove(s, to)) return true;
+    for (to = 6; to < 13; to++) if (g.p[to].length && tryMove(s, to)) return true;
+    for (to = 6; to < 13; to++) if (!g.p[to].length && tryMove(s, to)) return true;
+    return false;
+  }
+  function drawCards() {
+    snapshot();
+    if (!g.p[0].length) {
+      while (g.p[1].length) { var c = g.p[1].pop(); c.u = false; g.p[0].push(c); }
+    } else {
+      for (var k = 0; k < parseInt(draw, 10) && g.p[0].length; k++) { var d = g.p[0].pop(); d.u = true; g.p[1].push(d); }
+    }
+    g.moves++;
+  }
+  function selectable(p, i) {
+    var a = g.p[p];
+    if (i < 0 || i >= a.length || !a[i].u) return false;
+    if (p === 1 || (p >= 2 && p < 6)) return i === a.length - 1;
+    return p >= 6;
+  }
+
+  function tap(p, i) {
+    if (g.won) return;
+    msg = '';
+    if (p === 0) { sel = null; drawCards(); render(); return; }
+    if (sel && sel.p === p && sel.i === i) {
+      if (!autoMove(sel)) msg = 'no place for that card';
+      sel = null; render(); return;
+    }
+    if (sel && tryMove(sel, p)) { sel = null; render(); return; }
+    sel = selectable(p, i) ? { p: p, i: i } : null;
+    render();
+  }
+
+  function render() {
+    KG.text(statusEl, g.won ? 'You won in ' + g.moves + ' moves!' : 'Moves: ' + g.moves + ' · Deck: ' + g.p[0].length + (msg ? ' — ' + msg : ''));
+    var W = Math.min((window.innerWidth || 600) - 20, 760), gap = 6;
+    var CW = Math.floor((W - 6 * gap) / 7), CH = Math.round(CW * 1.4), fs = Math.max(12, Math.round(CW * 0.26));
+    var X = function (k) { return k * (CW + gap); };
+    var h = [], i, k;
+    function cardHtml(p, idx, x, y, showBig) {
+      var cd = g.p[p][idx], isSel = sel && sel.p === p && idx >= sel.i;
+      var base = 'left:' + x + 'px;top:' + y + 'px;width:' + CW + 'px;height:' + CH + 'px';
+      if (!cd.u) return '<div class="card back" data-p="' + p + '" data-i="' + idx + '" style="' + base + '"><div class="pat"></div></div>';
+      var sy = suits === 'S' ? SUIT_SYM[suit(cd.c)] : SUIT_LET[suit(cd.c)], lbl = RANKS[rank(cd.c)] + sy;
+      return '<div class="card' + (red(cd.c) ? ' red' : '') + (isSel ? ' sel' : '') + '" data-p="' + p + '" data-i="' + idx + '" style="' + base + '">' +
+        '<div class="lbl" style="font-size:' + fs + 'px;line-height:' + (fs + 2) + 'px">' + lbl + '</div>' +
+        (showBig ? '<div class="big" style="top:' + Math.round(CH * 0.38) + 'px;font-size:' + Math.round(CW * 0.5) + 'px">' + sy + '</div>' : '') + '</div>';
+    }
+    function slot(p, x, label) {
+      return '<div class="pile" data-p="' + p + '" data-i="-1" style="left:' + x + 'px;top:0;width:' + CW + 'px;height:' + CH + 'px;line-height:' + CH + 'px;font-size:' + fs + 'px">' + label + '</div>';
+    }
+    // Top row: stock, waste, foundations.
+    h.push(slot(0, X(0), g.p[1].length ? '&#8635;' : ''));
+    if (g.p[0].length) h.push(cardHtml(0, g.p[0].length - 1, X(0), 0, false));
+    h.push(slot(1, X(1), ''));
+    var wn = g.p[1].length, show = draw === '3' ? Math.min(3, wn) : Math.min(1, wn), fan = Math.round(CW * 0.28);
+    for (k = 0; k < show; k++) h.push(cardHtml(1, wn - show + k, X(1) + k * fan, 0, k === show - 1));
+    for (i = 2; i < 6; i++) {
+      h.push(slot(i, X(i + 1), 'A'));
+      if (g.p[i].length) h.push(cardHtml(i, g.p[i].length - 1, X(i + 1), 0, true));
+    }
+    // Tableau, squeezing the overlap if a column would run off the screen.
+    var y0 = CH + 14, avail = Math.max(CH * 2, (window.innerHeight || 800) - 240 - y0), maxBottom = y0 + CH;
+    for (i = 6; i < 13; i++) {
+      var a = g.p[i], downs = 0, ups = 0;
+      for (k = 0; k < a.length; k++) { if (a[k].u) ups++; else downs++; }
+      var dOff = Math.round(CH * 0.12), uOff = Math.round(fs * 1.35);
+      if (ups > 1 && downs * dOff + (ups - 1) * uOff + CH > avail) uOff = Math.max(Math.round(fs * 0.9), Math.floor((avail - CH - downs * dOff) / (ups - 1)));
+      h.push('<div class="pile" data-p="' + i + '" data-i="-1" style="left:' + X(i - 6) + 'px;top:' + y0 + 'px;width:' + CW + 'px;height:' + CH + 'px;line-height:' + CH + 'px;font-size:' + fs + 'px">K</div>');
+      var y = y0;
+      for (k = 0; k < a.length; k++) {
+        h.push(cardHtml(i, k, X(i - 6), y, k === a.length - 1));
+        if (k < a.length - 1) y += a[k].u ? uOff : dOff;
+      }
+      if (y + CH > maxBottom) maxBottom = y + CH;
+    }
+    tableEl.style.width = (7 * CW + 6 * gap) + 'px';
+    tableEl.style.height = maxBottom + 'px';
+    tableEl.innerHTML = h.join('');
+    KG.save(KEY, { draw: draw, suits: suits, g: g, hist: hist });
+  }
+
+  tableEl.onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    while (t && t !== tableEl && !(t.getAttribute && t.getAttribute('data-p') !== null)) t = t.parentNode;
+    if (!t || t === tableEl) { sel = null; render(); return; }
+    tap(parseInt(t.getAttribute('data-p'), 10), parseInt(t.getAttribute('data-i'), 10));
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.moves && !g.won && !window.confirm('Deal a new game?')) return;
+    deal(); render();
+  };
+  KG.$('undoBtn').onclick = function () { if (hist.length) { g = JSON.parse(hist.pop()); sel = null; msg = ''; render(); } };
+  KG.$('autoBtn').onclick = function () {
+    var moved = true;
+    sel = null;
+    while (moved && !g.won) {
+      moved = false;
+      for (var p = 1; p < 13 && !moved; p++) {
+        if (p >= 2 && p < 6) continue;
+        var a = g.p[p];
+        if (!a.length || !a[a.length - 1].u) continue;
+        for (var f = 2; f < 6 && !moved; f++) if (tryMove({ p: p, i: a.length - 1 }, f)) moved = true;
+      }
+    }
+    render();
+  };
+  KG.buttonGroup('draws', draw, function (v) { draw = v; render(); });
+  KG.buttonGroup('suits', suits, function (v) { suits = v; render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

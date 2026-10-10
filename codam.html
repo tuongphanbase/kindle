@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Dam</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; &#272;am</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (Black)</button><button data-v="ai2">Vs Computer (White)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button><button id="flipBtn">Flip Board</button>
+</div>
+<div id="log" class="log"></div>
+<p class="help">Checkers (8&times;8 draughts). Black moves first. Pieces move one square diagonally forward onto a dark
+square. Capture by jumping over an enemy piece onto the empty square behind it. <b>Capturing is compulsory</b>, and if
+you can keep jumping you must &mdash; tap the final square and the whole jump is made. A piece that reaches the far
+side becomes a king (K) and can move and capture backwards too. You lose when you have no pieces or no moves left.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  function inB(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+  function side(p) { return p === '' ? '' : p.toLowerCase(); }
+  function isKing(p) { return p === 'B' || p === 'W'; }
+  function sqName(i) { return 'abcdefgh'.charAt(i % 8) + (8 - Math.floor(i / 8)); }
+  function newState() {
+    var b = [];
+    for (var i = 0; i < 64; i++) {
+      var r = Math.floor(i / 8), c = i % 8;
+      b.push((r + c) % 2 === 1 ? (r < 3 ? 'w' : (r > 4 ? 'b' : '')) : '');
+    }
+    return { b: b, t: 'b', hm: 0 };
+  }
+  function dirsFor(p) { return isKing(p) ? DIAG : (side(p) === 'b' ? [DIAG[0], DIAG[1]] : [DIAG[2], DIAG[3]]); }
+  function lastRow(t) { return t === 'b' ? 0 : 7; }
+
+  // Depth-first search of jump chains from square f. A man that is crowned stops jumping.
+  function jumps(b, f, p, path, caps, out) {
+    var r = Math.floor(f / 8), c = f % 8, ds = dirsFor(p), found = false;
+    for (var k = 0; k < ds.length; k++) {
+      var mr = r + ds[k][0], mc = c + ds[k][1], lr = r + 2 * ds[k][0], lc = c + 2 * ds[k][1];
+      if (!inB(lr, lc)) continue;
+      var mid = mr * 8 + mc, land = lr * 8 + lc;
+      if (b[land] !== '' || b[mid] === '' || side(b[mid]) === side(p) || caps.indexOf(mid) >= 0) continue;
+      found = true;
+      var nb = b.slice(); nb[f] = ''; nb[land] = p;
+      var np = p, crowned = !isKing(p) && lr === lastRow(side(p));
+      if (crowned) np = p.toUpperCase();
+      var nc = caps.concat([mid]), npath = path.concat([land]);
+      if (crowned) out.push({ path: npath, caps: nc });
+      else jumps(nb, land, np, npath, nc, out);
+    }
+    if (!found && caps.length) out.push({ path: path, caps: caps });
+  }
+
+  function make(s, m) {
+    var b = s.b.slice(), p = b[m.f];
+    b[m.f] = '';
+    for (var i = 0; i < m.caps.length; i++) b[m.caps[i]] = '';
+    if (!isKing(p) && Math.floor(m.t / 8) === lastRow(side(p))) p = p.toUpperCase();
+    b[m.t] = p;
+    return { b: b, t: s.t === 'b' ? 'w' : 'b', hm: m.caps.length ? 0 : s.hm + 1 };
+  }
+
+  function legal(s) {
+    var b = s.b, caps = [], plain = [], i, k;
+    for (i = 0; i < 64; i++) {
+      if (side(b[i]) !== s.t) continue;
+      var out = [];
+      jumps(b, i, b[i], [i], [], out);
+      for (k = 0; k < out.length; k++) caps.push({ f: i, t: out[k].path[out[k].path.length - 1], path: out[k].path, caps: out[k].caps });
+      if (caps.length) continue;
+      var r = Math.floor(i / 8), c = i % 8, ds = dirsFor(b[i]);
+      for (k = 0; k < ds.length; k++) {
+        var rr = r + ds[k][0], cc = c + ds[k][1];
+        if (inB(rr, cc) && b[rr * 8 + cc] === '') plain.push({ f: i, t: rr * 8 + cc, path: [i, rr * 8 + cc], caps: [] });
+      }
+    }
+    var ms = caps.length ? caps : plain;
+    for (i = 0; i < ms.length; i++) ms[i].ns = make(s, ms[i]);
+    return ms;
+  }
+
+  function count(b, t) { var n = 0; for (var i = 0; i < 64; i++) if (side(b[i]) === t) n++; return n; }
+
+  var R = {
+    key: 'kg-codam',
+    sides: ['b', 'w'],
+    defaultOpt: '',
+    cols: 8,
+    rows: 8,
+    newState: newState,
+    legal: legal,
+    make: make,
+    evaluate: function (s) {
+      var v = 0;
+      for (var i = 0; i < 64; i++) {
+        var p = s.b[i];
+        if (p === '') continue;
+        var r = Math.floor(i / 8), c = i % 8, adv = side(p) === 'b' ? 7 - r : r;
+        var val = isKing(p) ? 170 : 100 + adv * 3 + (c >= 2 && c <= 5 ? 4 : 0) + (adv === 0 ? 6 : 0);
+        v += side(p) === s.t ? val : -val;
+      }
+      return v;
+    },
+    terminal: function (s, ms, ply) {
+      if (!ms.length) return -KG.MATE + ply;
+      if (s.hm >= 80) return 0;
+      return null;
+    },
+    best: function (R, s, level) {
+      return KG.bestNegamax(R, s, level === '1' ? 1 : (level === '2' ? 4 : 6), level === '1' ? 60 : 0);
+    },
+    choose: function (cands, play) { play(cands[0]); },
+    sideName: function (t) { return t === 'b' ? 'Black' : 'White'; },
+    extraStatus: function (s) { return ' · Black ' + count(s.b, 'b') + ', White ' + count(s.b, 'w'); },
+    notate: function (s, m) {
+      var t = [];
+      for (var i = 0; i < m.path.length; i++) t.push(sqName(m.path[i]));
+      return t.join(m.caps.length ? 'x' : '-');
+    },
+    result: function (s, ms) {
+      if (!ms.length) return (s.t === 'b' ? 'White' : 'Black') + ' wins!';
+      if (s.hm >= 80) return 'Draw — 40 moves each without a capture.';
+      return null;
+    },
+    render: function (el, S, v) {
+      var h = ['<table class="grid chess">'], vr, vc, i;
+      var dsz = Math.round(S * 0.78), off = Math.round((S - dsz) / 2);
+      for (vr = 0; vr < 8; vr++) {
+        h.push('<tr>');
+        for (vc = 0; vc < 8; vc++) {
+          i = v.flip ? (7 - vr) * 8 + (7 - vc) : vr * 8 + vc;
+          var r = Math.floor(i / 8), c = i % 8, p = v.s.b[i];
+          h.push('<td class="' + ((r + c) % 2 ? 'dk' : 'lt') + '" data-sq="' + i + '"><div class="c" style="width:' + S + 'px;height:' + S + 'px">');
+          if (v.last && (i === v.last.f || i === v.last.t)) h.push('<div class="last"></div>');
+          if (p !== '') {
+            h.push('<div class="disc ' + (side(p) === 'w' ? 'dw' : 'db') + '" style="left:' + off + 'px;top:' + off + 'px;width:' + dsz + 'px;height:' + dsz +
+              'px;line-height:' + (dsz - 6) + 'px;font-size:' + Math.round(S * 0.42) + 'px">' + (isKing(p) ? 'K' : '') + '</div>');
+          }
+          if (i === v.sel) h.push('<div class="sel"></div>');
+          if (v.targets[i]) {
+            var d = Math.round(S * 0.28);
+            h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) + 'px;width:' + d + 'px;height:' + d + 'px"></div>');
+          }
+          h.push('</div></td>');
+        }
+        h.push('</tr>');
+      }
+      h.push('</table>');
+      el.innerHTML = h.join('');
+    }
+  };
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Connect Four</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .c4 { border-collapse: collapse; margin: 0 auto; border: 3px solid #000; background: #777; }
+  .c4 td { padding: 0; }
+  .c4 .in { position: relative; }
+  .c4 .hole { position: absolute; background: #bbb; border: 1px solid #555; border-radius: 50%; -webkit-border-radius: 50%; }
+  .c4 .win { position: absolute; left: 1px; top: 1px; right: 1px; bottom: 1px; border: 4px solid #fff; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">B&#7889;n Li&ecirc;n Ti&#7871;p</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (go first)</button><button data-v="ai2">Vs Computer (go second)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button>
+</div>
+<p class="help">Connect Four. Tap a column to drop your disc into the lowest free space. Black goes first. Get
+<b>four in a row</b> &mdash; across, down or diagonally &mdash; to win. The last disc dropped has a small square on it.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-connect4', R = 6, C = 7, ORDER = [3, 2, 4, 1, 5, 0, 6];
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var st = { b: saved.b || null, moves: saved.moves || [], mode: saved.mode || 'ai1', level: saved.level || '2' };
+  var thinking = false, win = null;
+
+  function fresh() { st.b = []; for (var i = 0; i < R * C; i++) st.b.push(0); st.moves = []; win = null; }
+  if (!st.b) fresh();
+  function turn() { return st.moves.length % 2 ? 2 : 1; }
+  function human() { return st.mode === 'ai2' ? 2 : 1; }
+  function dropRow(b, c) { for (var r = R - 1; r >= 0; r--) if (!b[r * C + c]) return r; return -1; }
+  function findWin(b) {
+    var D = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (var p = 0; p < R * C; p++) {
+      if (!b[p]) continue;
+      var r = Math.floor(p / C), c = p % C;
+      for (var d = 0; d < 4; d++) {
+        var cells = [p];
+        for (var k = 1; k < 4; k++) {
+          var rr = r + D[d][0] * k, cc = c + D[d][1] * k;
+          if (rr < 0 || rr >= R || cc < 0 || cc >= C || b[rr * C + cc] !== b[p]) break;
+          cells.push(rr * C + cc);
+        }
+        if (cells.length === 4) return cells;
+      }
+    }
+    return null;
+  }
+  function full() { return st.moves.length === R * C; }
+  function computersTurn() { return st.mode !== '2p' && turn() !== human() && !win && !full(); }
+
+  function scoreWindow(a, me) {
+    var mine = 0, theirs = 0, empty = 0;
+    for (var i = 0; i < 4; i++) { if (a[i] === me) mine++; else if (a[i]) theirs++; else empty++; }
+    if (mine === 3 && empty === 1) return 5;
+    if (mine === 2 && empty === 2) return 2;
+    if (theirs === 3 && empty === 1) return -4;
+    return 0;
+  }
+  function evaluate(b, me) {
+    var s = 0, r, c;
+    for (r = 0; r < R; r++) if (b[r * C + 3] === me) s += 3;
+    for (r = 0; r < R; r++) for (c = 0; c < C; c++) {
+      if (c + 3 < C) s += scoreWindow([b[r * C + c], b[r * C + c + 1], b[r * C + c + 2], b[r * C + c + 3]], me);
+      if (r + 3 < R) s += scoreWindow([b[r * C + c], b[(r + 1) * C + c], b[(r + 2) * C + c], b[(r + 3) * C + c]], me);
+      if (r + 3 < R && c + 3 < C) s += scoreWindow([b[r * C + c], b[(r + 1) * C + c + 1], b[(r + 2) * C + c + 2], b[(r + 3) * C + c + 3]], me);
+      if (r + 3 < R && c - 3 >= 0) s += scoreWindow([b[r * C + c], b[(r + 1) * C + c - 1], b[(r + 2) * C + c - 2], b[(r + 3) * C + c - 3]], me);
+    }
+    return s;
+  }
+  function search(b, me, depth, alpha, beta, ply) {
+    var any = false;
+    for (var i = 0; i < C; i++) {
+      var c = ORDER[i], r = dropRow(b, c);
+      if (r < 0) continue;
+      any = true;
+      b[r * C + c] = me;
+      var v;
+      if (findWin(b)) v = KG.MATE - ply;
+      else if (depth <= 1) v = evaluate(b, me);
+      else v = -search(b, 3 - me, depth - 1, -beta, -alpha, ply + 1);
+      b[r * C + c] = 0;
+      if (v >= beta) return v;
+      if (v > alpha) alpha = v;
+    }
+    return any ? alpha : 0;
+  }
+  function bestCol() {
+    var b = st.b.slice(), me = turn(), depth = st.level === '1' ? 2 : (st.level === '2' ? 4 : 6), best = -1, bv = -KG.INF;
+    var cols = st.level === '1' ? KG.shuffle(ORDER.slice()) : ORDER;
+    for (var i = 0; i < C; i++) {
+      var c = cols[i], r = dropRow(b, c);
+      if (r < 0) continue;
+      b[r * C + c] = me;
+      var v = findWin(b) ? KG.MATE : -search(b, 3 - me, depth - 1, -KG.INF, -bv, 1);
+      b[r * C + c] = 0;
+      if (st.level === '1') v += Math.random() * 8;
+      if (best < 0 || v > bv) { bv = v; best = c; }
+    }
+    return best;
+  }
+
+  function drop(c) {
+    var r = dropRow(st.b, c);
+    if (r < 0) return;
+    st.b[r * C + c] = turn();
+    st.moves.push(r * C + c);
+    win = findWin(st.b);
+    refresh();
+  }
+  function refresh() {
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    var txt, nm = ['', 'Black', 'White'];
+    if (!win && st.moves.length) win = findWin(st.b);
+    if (win) {
+      var w = st.b[win[0]];
+      txt = st.mode === '2p' ? nm[w] + ' wins!' : (w === human() ? 'You win!' : 'Computer wins.');
+    } else if (full()) txt = 'Draw — the board is full.';
+    else txt = thinking ? 'Computer is thinking…' : nm[turn()] + ' to move' + (st.mode === '2p' ? '' : (turn() === human() ? ' (you)' : ' (computer)'));
+    KG.text(statusEl, txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !thinking) {
+      thinking = true;
+      KG.text(statusEl, 'Computer is thinking…');
+      setTimeout(function () { thinking = false; if (computersTurn()) drop(bestCol()); }, 60);
+    }
+  }
+  function render() {
+    var W = Math.min((window.innerWidth || 600) - 24, ((window.innerHeight || 800) - 280) * C / R, 640);
+    var S = Math.max(34, Math.floor(W / C)), dsz = Math.round(S * 0.8), off = Math.round((S - dsz) / 2);
+    var last = st.moves.length ? st.moves[st.moves.length - 1] : -1, wins = {}, i, h = ['<table class="c4">'];
+    if (win) for (i = 0; i < win.length; i++) wins[win[i]] = 1;
+    for (i = 0; i < R * C; i++) {
+      if (i % C === 0) h.push('<tr>');
+      var p = st.b[i];
+      h.push('<td data-col="' + (i % C) + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">');
+      h.push('<div class="' + (p === 1 ? 'disc db' : (p === 2 ? 'disc dw' : 'hole')) + '" style="left:' + off + 'px;top:' + off + 'px;width:' + dsz + 'px;height:' + dsz + 'px"></div>');
+      if (wins[i]) h.push('<div class="win"></div>');
+      if (i === last) {
+        var q = Math.round(S * 0.16);
+        h.push('<div style="position:absolute;left:' + Math.round((S - q) / 2) + 'px;top:' + Math.round((S - q) / 2) + 'px;width:' + q + 'px;height:' + q +
+          'px;background:' + (p === 1 ? '#fff' : '#000') + '"></div>');
+      }
+      h.push('</div></td>');
+      if (i % C === C - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-col');
+    if (v === null || thinking || win || computersTurn() || full()) return;
+    drop(parseInt(v, 10));
+  };
+  KG.$('newBtn').onclick = function () {
+    if (thinking) return;
+    if (st.moves.length && !win && !full() && !window.confirm('Start a new game?')) return;
+    fresh(); refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (thinking || !st.moves.length) return;
+    do { st.b[st.moves.pop()] = 0; } while (st.mode !== '2p' && st.moves.length && turn() !== human());
+    win = null; refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; KG.save(KEY, st); });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>

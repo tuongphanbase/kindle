@@ -9,6 +9,13 @@ A "Kindle Home" page of light games for the Kindle web browser (and any other e-
 - **Khoanh Số**: find and circle the numbers in order, against the clock
 - **Mê Cung**: random mazes in four sizes
 - **Nối Hình**: Onet-style tile matching (paths with at most two turns)
+- **Sudoku**: three difficulties, with notes, check and hints
+- **Xếp Bài**: Klondike Solitaire, draw 1 or draw 3
+- **Cờ Lật**: Reversi / Othello against the computer or a friend
+- **Cờ Đam**: 8×8 checkers with compulsory and multiple jumps
+- **Bốn Liên Tiếp**: Connect Four
+- **Xếp Số**: the sliding 15-puzzle in 3×3, 4×4 and 5×5
+- **Tắt Đèn**: Lights Out, getting harder each puzzle
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
 - **Ô Ăn Quan**: Vietnamese Mandarin Square Capturing, against the computer or a friend

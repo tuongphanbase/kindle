@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Lat</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .rv { border-collapse: collapse; margin: 0 auto; border: 3px solid #000; }
+  .rv td { padding: 0; border: 1px solid #000; background: #bbb; }
+  .rv .in { position: relative; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; L&#7853;t</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (Black)</button><button data-v="ai2">Vs Computer (White)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button>
+</div>
+<p class="help">Reversi / Othello. Black moves first. Place a disc so that it traps a straight line of your opponent's
+discs between it and another of your discs &mdash; the trapped discs flip to your colour. Dots show where you can play.
+If you have no move, your turn is skipped. When neither side can move, whoever has more discs wins.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-reversi', DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  var WT = [100, -20, 10, 5, 5, 10, -20, 100, -20, -50, -2, -2, -2, -2, -50, -20, 10, -2, -1, -1, -1, -1, -2, 10,
+    5, -2, -1, -1, -1, -1, -2, 5, 5, -2, -1, -1, -1, -1, -2, 5, 10, -2, -1, -1, -1, -1, -2, 10,
+    -20, -50, -2, -2, -2, -2, -50, -20, 100, -20, 10, 5, 5, 10, -20, 100];
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var st = { s: saved.s || null, hist: saved.hist || [], last: saved.last === undefined ? -1 : saved.last, mode: saved.mode || 'ai1', level: saved.level || '2' };
+  var thinking = false, msg = '';
+
+  function opp(t) { return t === 'b' ? 'w' : 'b'; }
+  function fresh() {
+    var b = [];
+    for (var i = 0; i < 64; i++) b.push('');
+    b[27] = 'w'; b[28] = 'b'; b[35] = 'b'; b[36] = 'w';
+    st.s = { b: b, t: 'b' }; st.hist = []; st.last = -1; msg = '';
+  }
+  if (!st.s) fresh();
+
+  function flips(b, p, t) {
+    if (b[p] !== '') return [];
+    var o = opp(t), r = Math.floor(p / 8), c = p % 8, out = [];
+    for (var d = 0; d < 8; d++) {
+      var rr = r + DIRS[d][0], cc = c + DIRS[d][1], line = [];
+      while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === o) { line.push(rr * 8 + cc); rr += DIRS[d][0]; cc += DIRS[d][1]; }
+      if (line.length && rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === t) out = out.concat(line);
+    }
+    return out;
+  }
+  function moves(b, t) {
+    var out = [];
+    for (var p = 0; p < 64; p++) { var f = flips(b, p, t); if (f.length) out.push({ p: p, f: f }); }
+    return out;
+  }
+  function apply(b, m, t) {
+    var nb = b.slice();
+    nb[m.p] = t;
+    for (var i = 0; i < m.f.length; i++) nb[m.f[i]] = t;
+    return nb;
+  }
+  function count(b, t) { var n = 0; for (var i = 0; i < 64; i++) if (b[i] === t) n++; return n; }
+  function evaluate(b, t) {
+    var o = opp(t), v = 0;
+    for (var i = 0; i < 64; i++) { if (b[i] === t) v += WT[i]; else if (b[i] === o) v -= WT[i]; }
+    return v + (moves(b, t).length - moves(b, o).length) * 5;
+  }
+  function search(b, t, depth, alpha, beta, passed) {
+    var ms = moves(b, t);
+    if (!ms.length) {
+      if (passed || !moves(b, opp(t)).length) { var d = count(b, t) - count(b, opp(t)); return d > 0 ? 10000 + d : (d < 0 ? -10000 + d : 0); }
+      return -search(b, opp(t), depth, -beta, -alpha, true);
+    }
+    if (depth <= 0) return evaluate(b, t);
+    for (var i = 0; i < ms.length; i++) {
+      var v = -search(apply(b, ms[i], t), opp(t), depth - 1, -beta, -alpha, false);
+      if (v >= beta) return v;
+      if (v > alpha) alpha = v;
+    }
+    return alpha;
+  }
+  function bestMove(b, t) {
+    var ms = KG.shuffle(moves(b, t)), depth = st.level === '1' ? 1 : (st.level === '2' ? 3 : 5), best = ms[0], bv = -KG.INF, alpha = -KG.INF;
+    for (var i = 0; i < ms.length; i++) {
+      var v = st.level === '1' ? -search(apply(b, ms[i], t), opp(t), 0, -KG.INF, KG.INF, false) + Math.random() * 40
+                               : -search(apply(b, ms[i], t), opp(t), depth - 1, -KG.INF, -alpha, false);
+      if (v > bv) { bv = v; best = ms[i]; }
+      if (v > alpha) alpha = v;
+    }
+    return best;
+  }
+
+  function human() { return st.mode === 'ai2' ? 'w' : 'b'; }
+  function over() { return !moves(st.s.b, 'b').length && !moves(st.s.b, 'w').length; }
+  function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !over(); }
+  function name(t) { return t === 'b' ? 'Black' : 'White'; }
+
+  function play(m) {
+    st.hist.push({ s: st.s, last: st.last });
+    var t = st.s.t, nb = apply(st.s.b, m, t);
+    st.s = { b: nb, t: opp(t) };
+    st.last = m.p; msg = '';
+    if (!moves(nb, opp(t)).length && moves(nb, t).length) { st.s.t = t; msg = name(opp(t)) + ' has no move — skipped.'; }
+    refresh();
+  }
+
+  function refresh() {
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    var b = st.s.b, nb = count(b, 'b'), nw = count(b, 'w'), txt;
+    if (over()) {
+      var winner = nb === nw ? '' : (nb > nw ? 'b' : 'w');
+      txt = !winner ? 'Draw!' : (st.mode === '2p' ? name(winner) + ' wins!' : (winner === human() ? 'You win!' : 'Computer wins.'));
+    } else {
+      txt = thinking ? 'Computer is thinking…' : name(st.s.t) + ' to move' + (st.mode === '2p' ? '' : (st.s.t === human() ? ' (you)' : ' (computer)'));
+    }
+    txt += ' · Black ' + nb + ', White ' + nw + (msg ? ' — ' + msg : '');
+    KG.text(statusEl, txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !thinking) {
+      thinking = true;
+      KG.text(statusEl, 'Computer is thinking…');
+      setTimeout(function () { thinking = false; if (computersTurn()) play(bestMove(st.s.b, st.s.t)); }, 60);
+    }
+  }
+
+  function render() {
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 280, 640);
+    var S = Math.max(30, Math.floor(W / 8) - 1), dsz = Math.round(S * 0.78), off = Math.round((S - dsz) / 2);
+    var legal = {}, i, h = ['<table class="rv">'];
+    if (!thinking && !computersTurn()) { var ms = moves(st.s.b, st.s.t); for (i = 0; i < ms.length; i++) legal[ms[i].p] = 1; }
+    for (i = 0; i < 64; i++) {
+      if (i % 8 === 0) h.push('<tr>');
+      h.push('<td data-sq="' + i + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">');
+      var p = st.s.b[i];
+      if (p) h.push('<div class="disc ' + (p === 'b' ? 'db' : 'dw') + '" style="left:' + off + 'px;top:' + off + 'px;width:' + dsz + 'px;height:' + dsz + 'px"></div>');
+      if (i === st.last) {
+        var q = Math.round(S * 0.16);
+        h.push('<div style="position:absolute;left:' + Math.round((S - q) / 2) + 'px;top:' + Math.round((S - q) / 2) + 'px;width:' + q + 'px;height:' + q +
+          'px;background:' + (p === 'b' ? '#fff' : '#000') + '"></div>');
+      }
+      if (legal[i]) {
+        var d = Math.round(S * 0.22);
+        h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) + 'px;width:' + d + 'px;height:' + d + 'px"></div>');
+      }
+      h.push('</div></td>');
+      if (i % 8 === 7) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || thinking || computersTurn() || over()) return;
+    var f = flips(st.s.b, parseInt(v, 10), st.s.t);
+    if (f.length) play({ p: parseInt(v, 10), f: f });
+  };
+  KG.$('newBtn').onclick = function () {
+    if (thinking) return;
+    if (st.hist.length && !over() && !window.confirm('Start a new game?')) return;
+    fresh(); refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (thinking || !st.hist.length) return;
+    do { var h = st.hist.pop(); st.s = h.s; st.last = h.last; } while (st.mode !== '2p' && st.hist.length && st.s.t !== human());
+    msg = ''; refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; KG.save(KEY, st); });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>

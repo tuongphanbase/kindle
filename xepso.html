@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Xep So</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .xs { border-collapse: separate; border-spacing: 4px; margin: 0 auto; background: #000; }
+  .xs td { padding: 0; text-align: center; vertical-align: middle; background: #fff; font-weight: bold; font-family: Georgia, serif; }
+  .xs td.gap { background: #777; }
+  .xs td.ok { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">X&#7871;p S&#7889;</span></div>
+<div class="controls" id="sizes">
+  <button data-v="3">3&times;3</button><button data-v="4">4&times;4</button><button data-v="5">5&times;5</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">Shuffle</button>
+</div>
+<p class="help">Slide the tiles back into order: 1, 2, 3&hellip; from the top-left, with the empty space last. Tap
+any tile in the same row or column as the empty space to slide it (and any tiles between) into the gap. Tiles already
+in their right place are underlined.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-xepso';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '4', best = saved.best || {}, g = saved.g || null;
+
+  // Shuffle with random legal slides from the solved position, so the puzzle is always solvable.
+  function newGame() {
+    var n = parseInt(size, 10), t = [], i;
+    for (i = 1; i < n * n; i++) t.push(i);
+    t.push(0);
+    var gap = n * n - 1, prev = -1;
+    for (i = 0; i < n * n * 40; i++) {
+      var r = Math.floor(gap / n), c = gap % n, opts = [];
+      if (r > 0) opts.push(gap - n);
+      if (r < n - 1) opts.push(gap + n);
+      if (c > 0) opts.push(gap - 1);
+      if (c < n - 1) opts.push(gap + 1);
+      var o = opts[Math.floor(Math.random() * opts.length)];
+      if (o === prev && opts.length > 1) { i--; continue; }
+      t[gap] = t[o]; t[o] = 0; prev = gap; gap = o;
+    }
+    g = { n: n, t: t, moves: 0, start: 0, secs: 0, done: false };
+    if (solved()) newGame();
+  }
+  function solved() {
+    for (var i = 0; i < g.t.length - 1; i++) if (g.t[i] !== i + 1) return false;
+    return true;
+  }
+  if (!g || String(g.n) !== size) newGame();
+
+  function tap(p) {
+    if (g.done) return;
+    var n = g.n, gap = g.t.indexOf(0), step;
+    if (Math.floor(p / n) === Math.floor(gap / n)) step = p > gap ? 1 : -1;
+    else if (p % n === gap % n) step = p > gap ? n : -n;
+    else return;
+    if (!g.start) g.start = new Date().getTime();
+    while (gap !== p) { g.t[gap] = g.t[gap + step]; gap += step; g.t[gap] = 0; g.moves++; }
+    if (solved()) {
+      g.done = true;
+      g.secs = Math.round((new Date().getTime() - g.start) / 1000);
+      if (!best[size] || g.moves < best[size]) best[size] = g.moves;
+    }
+    render();
+  }
+
+  function render() {
+    KG.text(statusEl, g.done ? 'Solved in ' + g.moves + ' moves and ' + g.secs + ' s! Best: ' + best[size] + ' moves.'
+      : 'Moves: ' + g.moves + (best[size] ? '   (best ' + best[size] + ')' : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 560);
+    var S = Math.floor((W - 4 * (g.n + 1)) / g.n), h = ['<table class="xs">'];
+    for (var i = 0; i < g.t.length; i++) {
+      if (i % g.n === 0) h.push('<tr>');
+      var v = g.t[i];
+      h.push('<td data-sq="' + i + '" class="' + (v ? (v === i + 1 ? 'ok' : '') : 'gap') + '" style="width:' + S + 'px;height:' + S +
+        'px;font-size:' + Math.round(S * 0.45) + 'px">' + (v || '') + '</td>');
+      if (i % g.n === g.n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, best: best, g: g });
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v !== null) tap(parseInt(v, 10));
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.moves && !g.done && !window.confirm('Shuffle a new puzzle?')) return;
+    newGame(); render();
+  };
+  KG.buttonGroup('sizes', size, function (v) { size = v; newGame(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>
