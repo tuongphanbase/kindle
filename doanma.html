@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Doan Ma</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .mm { border-collapse: collapse; margin: 0 auto; }
+  .mm td { padding: 2px 4px; text-align: center; vertical-align: middle; }
+  .mm .d { width: 40px; height: 40px; border: 2px solid #000; font-size: 24px; font-weight: bold; font-family: Arial, Helvetica, sans-serif; }
+  .mm .cur { border-style: dashed; }
+  .mm .fb { text-align: left; font-size: 15px; white-space: nowrap; }
+  .mm .n { font-size: 14px; color: #555; }
+  .keys { text-align: center; margin: 8px 0; }
+  .keys button { width: 50px; height: 50px; font-size: 22px; font-weight: bold; margin: 2px; padding: 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">&#272;o&aacute;n M&atilde;</span></div>
+<div class="controls" id="levels">
+  <button data-v="e">Easy</button><button data-v="m">Medium</button><button data-v="h">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="keys" id="keys"></div>
+<div class="controls">
+  <button id="delBtn">&larr; Delete</button><button id="goBtn">Guess</button><button id="newBtn">New Code</button>
+</div>
+<p class="help">Mastermind. The computer hides a secret code. Type a guess and press <b>Guess</b>. For each guess you
+are told how many digits are the <b>right digit in the right place</b>, and how many are a right digit but in the
+<b>wrong place</b>. Crack the code within 10 guesses. Easy: 4 different digits from 1&ndash;6. Medium: 4 digits from
+1&ndash;6, repeats allowed. Hard: 5 digits from 1&ndash;8, repeats allowed.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-doanma', TRIES = 10;
+  var LV = { e: { len: 4, max: 6, rep: false }, m: { len: 4, max: 6, rep: true }, h: { len: 5, max: 8, rep: true } };
+  var saved = KG.load(KEY) || {};
+  var level = saved.level || 'e', g = saved.g || null;
+
+  function newCode() {
+    var L = LV[level], code = [], pool = [];
+    for (var d = 1; d <= L.max; d++) pool.push(d);
+    while (code.length < L.len) {
+      if (L.rep) code.push(1 + Math.floor(Math.random() * L.max));
+      else code.push(KG.shuffle(pool).pop());
+    }
+    g = { level: level, code: code, guesses: [], cur: [], over: '' };
+  }
+  if (!g || g.level !== level) newCode();
+
+  function score(guess) {
+    var right = 0, wrong = 0, cc = {}, gc = {}, i;
+    for (i = 0; i < guess.length; i++) {
+      if (guess[i] === g.code[i]) right++;
+      else { cc[g.code[i]] = (cc[g.code[i]] || 0) + 1; gc[guess[i]] = (gc[guess[i]] || 0) + 1; }
+    }
+    for (var k in gc) if (gc.hasOwnProperty(k) && cc[k]) wrong += Math.min(gc[k], cc[k]);
+    return [right, wrong];
+  }
+
+  function render() {
+    var L = LV[level], i, j, h = ['<table class="mm">'];
+    var st = g.over === 'win' ? 'Cracked it in ' + g.guesses.length + ' guesses!' :
+      (g.over === 'lose' ? 'Out of guesses — the code was ' + g.code.join(' ') + '.' : 'Guess ' + (g.guesses.length + 1) + ' of ' + TRIES);
+    KG.text(KG.$('status'), st);
+    for (i = 0; i < g.guesses.length; i++) {
+      var gs = g.guesses[i];
+      h.push('<tr><td class="n">' + (i + 1) + '.</td>');
+      for (j = 0; j < L.len; j++) h.push('<td><div class="d">' + gs.d[j] + '</div></td>');
+      h.push('<td class="fb">Right place: <b>' + gs.s[0] + '</b><br>Wrong place: <b>' + gs.s[1] + '</b></td></tr>');
+    }
+    if (!g.over) {
+      h.push('<tr><td class="n">' + (g.guesses.length + 1) + '.</td>');
+      for (j = 0; j < L.len; j++) h.push('<td><div class="d cur">' + (g.cur[j] || '') + '</div></td>');
+      h.push('<td class="fb"></td></tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    var k = [];
+    for (i = 1; i <= L.max; i++) k.push('<button data-k="' + i + '">' + i + '</button>');
+    KG.$('keys').innerHTML = k.join('');
+    KG.save(KEY, { level: level, g: g });
+  }
+  KG.$('keys').onclick = function (e) {
+    var d = KG.attrFromEvent(e, KG.$('keys'), 'data-k');
+    if (d === null || g.over || g.cur.length >= LV[level].len) return;
+    g.cur.push(parseInt(d, 10));
+    render();
+  };
+  KG.$('delBtn').onclick = function () { if (g.cur.length && !g.over) { g.cur.pop(); render(); } };
+  KG.$('goBtn').onclick = function () {
+    if (g.over || g.cur.length !== LV[level].len) return;
+    var s = score(g.cur);
+    g.guesses.push({ d: g.cur, s: s });
+    g.cur = [];
+    if (s[0] === LV[level].len) g.over = 'win';
+    else if (g.guesses.length >= TRIES) g.over = 'lose';
+    render();
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.guesses.length && !g.over && !window.confirm('Give up and start a new code?')) return;
+    newCode(); render();
+  };
+  KG.buttonGroup('levels', level, function (v) {
+    if (g.guesses.length && !g.over && !window.confirm('Start a new code at this level?')) return false;
+    level = v; newCode(); render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

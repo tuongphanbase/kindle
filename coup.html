@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Up</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; &Uacute;p</span></div>
+<div class="controls" id="modes">
+  <button data-v="ai1">Vs Computer (Red)</button><button data-v="ai2">Vs Computer (Black)</button><button data-v="2p">2 Player</button>
+</div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="undoBtn">Undo</button><button id="flipBtn">Flip Board</button>
+</div>
+<div class="controls" id="opts">
+  Pieces: <button data-v="C">Chinese</button><button data-v="L">Letters</button>
+</div>
+<div id="log" class="log"></div>
+<p class="help">Hidden Chinese chess. Except the two generals, every piece starts <b>face down</b> (a blank disc) on a
+random starting square. A face-down piece moves like the piece that normally starts on its square; once it moves, it
+is turned over and from then on moves as what it really is. A turned-over advisor or elephant may leave the palace
+and cross the river. Otherwise the rules are those of C&#7901; T&#432;&#7899;ng: checkmate the enemy general to win.
+The computer cannot see face-down pieces either. Your game is saved automatically.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var START =
+    'rheakaehr' + '.........' + '.c.....c.' + 'p.p.p.p.p' + '.........' +
+    '.........' + 'P.P.P.P.P' + '.C.....C.' + '.........' + 'RHEAKAEHR';
+  var VAL = { k: 0, a: 200, e: 200, h: 400, r: 900, c: 450, p: 100 };
+  var CN = { K: '帥', A: '仕', E: '相', H: '傌', R: '俥', C: '炮', P: '兵',
+             k: '將', a: '士', e: '象', h: '馬', r: '車', c: '砲', p: '卒' };
+  var ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  var DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  var HORSE = [[-2, -1], [-2, 1], [2, -1], [2, 1], [-1, -2], [1, -2], [-1, 2], [1, 2]];
+
+  function inB(r, c) { return r >= 0 && r < 10 && c >= 0 && c < 9; }
+  function isRed(p) { return p !== '' && p === p.toUpperCase(); }
+  function side(p) { return p === '' ? '' : (isRed(p) ? 'r' : 'b'); }
+  function inPalace(r, c, t) { return c >= 3 && c <= 5 && (t === 'r' ? r >= 7 && r <= 9 : r >= 0 && r <= 2); }
+  function ownHalf(r, t) { return t === 'r' ? r >= 5 : r <= 4; }
+  function sgn(x) { return x > 0 ? 1 : (x < 0 ? -1 : 0); }
+  function sqName(i) { return 'abcdefghi'.charAt(i % 9) + (10 - Math.floor(i / 9)); }
+
+  // Every piece except the generals starts face down on a shuffled starting square.
+  function newState() {
+    var b = [], hid = [], i, red = [], blk = [];
+    for (i = 0; i < 90; i++) {
+      var ch = START.charAt(i);
+      b.push(ch === '.' ? '' : ch);
+      hid.push(ch !== '.' && ch !== 'K' && ch !== 'k');
+      if (hid[i]) (isRed(ch) ? red : blk).push(ch);
+    }
+    KG.shuffle(red); KG.shuffle(blk);
+    for (i = 0; i < 90; i++) if (hid[i]) b[i] = isRed(b[i]) ? red.pop() : blk.pop();
+    return { b: b, hid: hid, t: 'r', hm: 0 };
+  }
+  // The board as the players can see it: face-down pieces act as the piece that starts on their square.
+  function eff(s) {
+    var e = s.b.slice();
+    for (var i = 0; i < 90; i++) if (s.hid[i]) e[i] = START.charAt(i);
+    return e;
+  }
+
+  function pseudo(s, capOnly) {
+    var b = eff(s), t = s.t, ms = [], i, j, d, nr, nc, q;
+    function add(f, r2, c2) {
+      var to = r2 * 9 + c2, x = b[to];
+      if (x === '') { if (!capOnly) ms.push({ f: f, t: to }); }
+      else if (side(x) !== t) ms.push({ f: f, t: to });
+    }
+    for (i = 0; i < 90; i++) {
+      var p = b[i];
+      if (side(p) !== t) continue;
+      var r = Math.floor(i / 9), c = i % 9, u = p.toUpperCase();
+      if (u === 'K') {
+        for (j = 0; j < 4; j++) { nr = r + ORTH[j][0]; nc = c + ORTH[j][1]; if (inPalace(nr, nc, t)) add(i, nr, nc); }
+      } else if (u === 'A') {
+        for (j = 0; j < 4; j++) { nr = r + DIAG[j][0]; nc = c + DIAG[j][1]; if (s.hid[i] ? inPalace(nr, nc, t) : inB(nr, nc)) add(i, nr, nc); }
+      } else if (u === 'E') {
+        for (j = 0; j < 4; j++) {
+          nr = r + 2 * DIAG[j][0]; nc = c + 2 * DIAG[j][1];
+          if (inB(nr, nc) && (!s.hid[i] || ownHalf(nr, t)) && b[(r + DIAG[j][0]) * 9 + c + DIAG[j][1]] === '') add(i, nr, nc);
+        }
+      } else if (u === 'H') {
+        for (j = 0; j < 8; j++) {
+          d = HORSE[j]; nr = r + d[0]; nc = c + d[1];
+          if (!inB(nr, nc)) continue;
+          var lr = r + (Math.abs(d[0]) === 2 ? d[0] / 2 : 0), lc = c + (Math.abs(d[1]) === 2 ? d[1] / 2 : 0);
+          if (b[lr * 9 + lc] === '') add(i, nr, nc);
+        }
+      } else if (u === 'R') {
+        for (j = 0; j < 4; j++) {
+          d = ORTH[j]; nr = r + d[0]; nc = c + d[1];
+          while (inB(nr, nc)) {
+            q = b[nr * 9 + nc];
+            if (q === '') { if (!capOnly) ms.push({ f: i, t: nr * 9 + nc }); }
+            else { if (side(q) !== t) ms.push({ f: i, t: nr * 9 + nc }); break; }
+            nr += d[0]; nc += d[1];
+          }
+        }
+      } else if (u === 'C') {
+        for (j = 0; j < 4; j++) {
+          d = ORTH[j]; nr = r + d[0]; nc = c + d[1];
+          var screen = false;
+          while (inB(nr, nc)) {
+            q = b[nr * 9 + nc];
+            if (!screen) {
+              if (q === '') { if (!capOnly) ms.push({ f: i, t: nr * 9 + nc }); }
+              else screen = true;
+            } else if (q !== '') {
+              if (side(q) !== t) ms.push({ f: i, t: nr * 9 + nc });
+              break;
+            }
+            nr += d[0]; nc += d[1];
+          }
+        }
+      } else if (u === 'P') {
+        nr = r + (t === 'r' ? -1 : 1);
+        if (inB(nr, c)) add(i, nr, c);
+        if (!ownHalf(r, t)) {
+          if (c > 0) add(i, r, c - 1);
+          if (c < 8) add(i, r, c + 1);
+        }
+      }
+    }
+    return ms;
+  }
+
+  // Is square sq (a general) attacked by side `by`? Includes the "flying general" rule.
+  function attacked(b, sq, by) {
+    var r = Math.floor(sq / 9), c = sq % 9, red = by === 'r', i, d, nr, nc, q;
+    var R = red ? 'R' : 'r', C = red ? 'C' : 'c', H = red ? 'H' : 'h', P = red ? 'P' : 'p', K = red ? 'K' : 'k';
+    var A = red ? 'A' : 'a', E = red ? 'E' : 'e';
+    // Turned-over advisors and elephants can roam the whole board.
+    for (i = 0; i < 4; i++) {
+      nr = r + DIAG[i][0]; nc = c + DIAG[i][1];
+      if (inB(nr, nc) && b[nr * 9 + nc] === A) return true;
+      if (inB(nr, nc) && b[nr * 9 + nc] === '' && inB(r + 2 * DIAG[i][0], c + 2 * DIAG[i][1]) && b[(r + 2 * DIAG[i][0]) * 9 + c + 2 * DIAG[i][1]] === E) return true;
+    }
+    for (i = 0; i < 4; i++) {
+      d = ORTH[i]; nr = r + d[0]; nc = c + d[1];
+      var found = 0;
+      while (inB(nr, nc)) {
+        q = b[nr * 9 + nc];
+        if (q !== '') {
+          if (found === 0) { if (q === R || q === K) return true; found = 1; }
+          else { if (q === C) return true; break; }
+        }
+        nr += d[0]; nc += d[1];
+      }
+    }
+    for (i = 0; i < 8; i++) {
+      d = HORSE[i]; nr = r + d[0]; nc = c + d[1];
+      if (!inB(nr, nc) || b[nr * 9 + nc] !== H) continue;
+      var lr = nr - (Math.abs(d[0]) === 2 ? sgn(d[0]) : 0), lc = nc - (Math.abs(d[1]) === 2 ? sgn(d[1]) : 0);
+      if (b[lr * 9 + lc] === '') return true;
+    }
+    var pr = red ? r + 1 : r - 1;
+    if (inB(pr, c) && b[pr * 9 + c] === P) return true;
+    if (red ? r <= 4 : r >= 5) {
+      if (c > 0 && b[r * 9 + c - 1] === P) return true;
+      if (c < 8 && b[r * 9 + c + 1] === P) return true;
+    }
+    return false;
+  }
+
+  function findKing(b, t) {
+    var k = t === 'r' ? 'K' : 'k';
+    for (var i = 0; i < 90; i++) if (b[i] === k) return i;
+    return -1;
+  }
+  function inCheck(s, t) { return attacked(eff(s), findKing(s.b, t), t === 'r' ? 'b' : 'r'); }
+
+  function make(s, m) {
+    var b = s.b.slice(), hid = s.hid.slice(), cap = b[m.t];
+    b[m.t] = b[m.f]; b[m.f] = '';
+    hid[m.t] = false; hid[m.f] = false;
+    return { b: b, hid: hid, t: s.t === 'r' ? 'b' : 'r', hm: cap !== '' ? 0 : s.hm + 1 };
+  }
+
+  function legal(s) {
+    var ps = pseudo(s, false), out = [];
+    for (var i = 0; i < ps.length; i++) {
+      var ns = make(s, ps[i]);
+      if (!inCheck(ns, s.t)) { ps[i].ns = ns; out.push(ps[i]); }
+    }
+    return out;
+  }
+
+  function evaluateRed(b, hid) {
+    var score = 0;
+    for (var i = 0; i < 90; i++) {
+      var p = b[i];
+      if (p === '') continue;
+      if (hid[i]) { score += isRed(p) ? 330 : -330; continue; }
+      var r = Math.floor(i / 9), c = i % 9, u = p.toLowerCase(), red = isRed(p);
+      var adv = red ? 9 - r : r; // 0 = own back rank, 9 = enemy back rank
+      var v = VAL[u], cd = Math.abs(c - 4);
+      if (u === 'p') {
+        if (adv >= 5) v += 90 + (cd <= 1 ? 30 : 0) + (adv >= 6 && adv <= 8 ? 20 : 0);
+      } else if (u === 'h') v += 20 - cd * 6 + (adv >= 4 && adv <= 7 ? 20 : 0);
+      else if (u === 'c') v += (cd === 0 ? 20 : 0) + (adv <= 2 ? 10 : 0);
+      else if (u === 'r') v += (adv >= 5 ? 20 : 0);
+      score += red ? v : -v;
+    }
+    return score;
+  }
+
+  var R = {
+    key: 'kg-coup',
+    sides: ['r', 'b'],
+    defaultOpt: 'C',
+    newState: newState,
+    legal: legal,
+    make: make,
+    captures: function (s) { return pseudo(s, true); },
+    inCheck: inCheck,
+    value: function (p) { return VAL[p.toLowerCase()] || 2000; },
+    evaluate: function (s) { var e = evaluateRed(s.b, s.hid); return s.t === 'r' ? e : -e; },
+    // The computer plans on the visible board, where face-down pieces are what their square suggests.
+    best: function (R, s, level) {
+      var m = KG.best(R, { b: eff(s), hid: s.hid.slice(), t: s.t, hm: s.hm }, level);
+      return m ? { f: m.f, t: m.t } : null;
+    },
+    noMoves: function (s, ply) { return -KG.MATE + ply; },
+    sideName: function (t) { return t === 'r' ? 'Red' : 'Black'; },
+    moveText: function (m) { return sqName(m.f) + '–' + sqName(m.t); },
+    result: function (s, ms) {
+      var winner = s.t === 'r' ? 'Black' : 'Red';
+      if (!ms.length) return (inCheck(s, s.t) ? 'Checkmate! ' : 'No legal moves! ') + winner + ' wins.';
+      if (s.hm >= 120) return 'Draw — 60 moves without a capture.';
+      return null;
+    },
+    notate: function (s, m) {
+      var txt = (s.hid[m.f] ? '?' : s.b[m.f].toUpperCase()) + sqName(m.f) + (s.b[m.t] !== '' ? 'x' : '-') + sqName(m.t) +
+        (s.hid[m.f] ? '=' + s.b[m.f].toUpperCase() : '');
+      var ns = m.ns || make(s, m);
+      if (inCheck(ns, ns.t)) txt += legal(ns).length ? '+' : '#';
+      return txt;
+    },
+    cols: 9,
+    rows: 10,
+    render: function (el, S, v) {
+      var h = ['<table class="grid">'], vr, vc, i, k;
+      var lw = S >= 48 ? 2 : 1, half = Math.floor(S / 2), lo = half - Math.floor(lw / 2);
+      var kingSq = v.check ? findKing(v.s.b, v.s.t) : -1;
+      var dsz = Math.round(S * 0.88), doff = Math.round((S - dsz) / 2), diagLen = Math.round(S * 0.7071);
+      function seg(l, t, w, hh) {
+        h.push('<div class="seg" style="left:' + l + 'px;top:' + t + 'px;width:' + w + 'px;height:' + hh + 'px"></div>');
+      }
+      function isPalace(r, c) { return c >= 3 && c <= 5 && (r <= 2 || r >= 7); }
+      function isCenter(r, c) { return c === 4 && (r === 1 || r === 8); }
+      for (vr = 0; vr < 10; vr++) {
+        h.push('<tr>');
+        for (vc = 0; vc < 9; vc++) {
+          i = v.flip ? (9 - vr) * 9 + (8 - vc) : vr * 9 + vc;
+          var p = v.s.b[i];
+          h.push('<td data-sq="' + i + '"><div class="c" style="width:' + S + 'px;height:' + S + 'px">');
+          // grid lines (symmetric, so drawn in display coordinates)
+          var edge = vc === 0 || vc === 8;
+          if (vc > 0) seg(0, lo, half, lw);
+          if (vc < 8) seg(lo, lo, S - lo, lw);
+          if (vr > 0 && (edge || vr !== 5)) seg(lo, 0, lw, half);
+          if (vr < 9 && (edge || vr !== 4)) seg(lo, lo, lw, S - lo);
+          if (isPalace(vr, vc)) {
+            var dirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            for (k = 0; k < 4; k++) {
+              var nr = vr + dirs[k][0], nc = vc + dirs[k][1];
+              if (!isPalace(nr, nc) || !(isCenter(vr, vc) || isCenter(nr, nc))) continue;
+              var ang = Math.round(Math.atan2(dirs[k][0], dirs[k][1]) * 180 / Math.PI);
+              var tf = 'rotate(' + ang + 'deg)';
+              h.push('<div class="diag" style="left:' + half + 'px;top:' + lo + 'px;width:' + diagLen + 'px;height:' + lw +
+                'px;-webkit-transform:' + tf + ';transform:' + tf + '"></div>');
+            }
+          }
+          if (vr === 4 && (vc === 1 || vc === 5)) {
+            var lbl = v.opt === 'C' ? (vc === 1 ? '楚 河' : '漢 界') : (vc === 1 ? 'river' : 'river');
+            h.push('<div class="river" style="left:' + half + 'px;top:' + half + 'px;width:' + (2 * S) + 'px;height:' + S +
+              'px;line-height:' + S + 'px;font-size:' + Math.round(S * 0.45) + 'px">' + lbl + '</div>');
+          }
+          if (v.last && (i === v.last.f || i === v.last.t)) h.push('<div class="last"></div>');
+          if (p !== '') {
+            var red = isRed(p);
+            if (i === kingSq) h.push('<div class="ck" style="position:absolute;left:0;top:0;width:100%;height:100%"></div>');
+            h.push('<div class="disc ' + (red ? 'xr' : 'db') + '" style="left:' + doff + 'px;top:' + doff + 'px;width:' + dsz +
+              'px;height:' + dsz + 'px;line-height:' + (dsz - 6) + 'px;font-size:' + Math.round(S * (v.opt === 'C' ? 0.5 : 0.44)) +
+              'px">' + (v.s.hid[i] ? '' : (v.opt === 'C' ? CN[p] : p.toUpperCase())) + '</div>');
+          }
+          if (i === v.sel) h.push('<div class="sel"></div>');
+          if (v.targets[i]) {
+            if (p === '') {
+              var d = Math.round(S * 0.3);
+              h.push('<div class="dot" style="left:' + Math.round((S - d) / 2) + 'px;top:' + Math.round((S - d) / 2) +
+                'px;width:' + d + 'px;height:' + d + 'px"></div>');
+            } else h.push('<div class="ring"></div>');
+          }
+          h.push('</div></td>');
+        }
+        h.push('</tr>');
+      }
+      h.push('</table>');
+      el.innerHTML = h.join('');
+    }
+  };
+
+  KG.Game(R);
+})();
+</script>
+</body>
+</html>

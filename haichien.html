@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Hai Chien</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .bs { border-collapse: collapse; margin: 0 auto; border: 2px solid #000; }
+  .bs td { padding: 0; border: 1px solid #888; text-align: center; vertical-align: middle; font-weight: bold; font-family: Arial, Helvetica, sans-serif; background: #fff; }
+  .bs .ship { background: #bbb; }
+  .bs .hit { background: #777; color: #fff; }
+  .bs .sunk { background: #000; color: #fff; }
+  .lbl { text-align: center; font-weight: bold; margin: 6px 0 2px; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">H&#7843;i Chi&#7871;n</span></div>
+<div class="controls" id="levels">
+  Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status"></div>
+<div class="lbl">Enemy sea &mdash; tap to fire</div>
+<div id="enemy"></div>
+<div class="lbl">Your fleet</div>
+<div id="mine"></div>
+<div class="controls">
+  <button id="newBtn">New Game</button><button id="placeBtn">Move My Ships</button>
+</div>
+<p class="help">Battleship. Each side hides five ships (lengths 5, 4, 3, 3 and 2) that never touch. Take turns firing:
+&bull; is a miss, &times; is a hit, and a sunk ship turns black. Sink all the enemy's ships before they sink yours!
+Before your first shot you can press <b>Move My Ships</b> for a new layout.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-haichien', N = 10, SHIPS = [5, 4, 3, 3, 2];
+  var enemyEl = KG.$('enemy'), mineEl = KG.$('mine'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var level = saved.level || '2', g = saved.g || null, busy = false, msg = '';
+
+  // ships: [{ cells: [...], hits: n }]; shots: 0 unknown, 1 miss, 2 hit.
+  function place() {
+    var taken = [], ships = [], i, k;
+    for (i = 0; i < N * N; i++) taken.push(0);
+    for (k = 0; k < SHIPS.length; k++) {
+      var L = SHIPS[k], ok = false;
+      while (!ok) {
+        var horiz = Math.random() < 0.5, r = Math.floor(Math.random() * (horiz ? N : N - L + 1)), c = Math.floor(Math.random() * (horiz ? N - L + 1 : N));
+        var cells = [];
+        ok = true;
+        for (i = 0; i < L; i++) {
+          var rr = horiz ? r : r + i, cc = horiz ? c + i : c;
+          for (var dr = -1; dr <= 1; dr++) for (var dc = -1; dc <= 1; dc++) {
+            var nr = rr + dr, nc = cc + dc;
+            if (nr >= 0 && nr < N && nc >= 0 && nc < N && taken[nr * N + nc]) ok = false;
+          }
+          cells.push(rr * N + cc);
+        }
+      }
+      for (i = 0; i < cells.length; i++) taken[cells[i]] = 1;
+      ships.push({ cells: cells, hits: 0 });
+    }
+    return ships;
+  }
+  function zeros() { var a = []; for (var i = 0; i < N * N; i++) a.push(0); return a; }
+  function newGame() { g = { mine: place(), theirs: place(), atMe: zeros(), atThem: zeros(), over: '' }; msg = ''; }
+  if (!g) newGame();
+
+  function shipAt(ships, p) {
+    for (var k = 0; k < ships.length; k++) if (ships[k].cells.indexOf(p) >= 0) return ships[k];
+    return null;
+  }
+  function sunk(ship) { return ship.hits === ship.cells.length; }
+  function allSunk(ships) { for (var k = 0; k < ships.length; k++) if (!sunk(ships[k])) return false; return true; }
+  function fire(ships, shots, p) {
+    var s = shipAt(ships, p);
+    if (!s) { shots[p] = 1; return 'miss'; }
+    shots[p] = 2; s.hits++;
+    if (sunk(s)) return 'sank a ' + s.cells.length + '-ship';
+    return 'hit';
+  }
+
+  // Computer targeting. Easy: random. Medium: hunt and target. Hard: counts every possible ship position.
+  function aiShot() {
+    var shots = g.atMe, unknown = [], hits = [], i, k;
+    for (i = 0; i < N * N; i++) {
+      if (!shots[i]) unknown.push(i);
+      else if (shots[i] === 2 && !sunk(shipAt(g.mine, i))) hits.push(i);
+    }
+    if (level === '1') return unknown[Math.floor(Math.random() * unknown.length)];
+    if (level === '2' && hits.length) {
+      var opts = [];
+      for (k = 0; k < hits.length; k++) {
+        var r = Math.floor(hits[k] / N), c = hits[k] % N, nb = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]];
+        for (var j = 0; j < 4; j++) if (nb[j][0] >= 0 && nb[j][0] < N && nb[j][1] >= 0 && nb[j][1] < N && !shots[nb[j][0] * N + nb[j][1]]) opts.push(nb[j][0] * N + nb[j][1]);
+      }
+      if (opts.length) return opts[Math.floor(Math.random() * opts.length)];
+    }
+    if (level === '2') {
+      var par = [];
+      for (k = 0; k < unknown.length; k++) if ((Math.floor(unknown[k] / N) + unknown[k] % N) % 2 === 0) par.push(unknown[k]);
+      var pool = par.length ? par : unknown;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    // Hard: probability density over the ships that are still afloat.
+    var score = zeros(), blocked = zeros();
+    for (i = 0; i < N * N; i++) if (shots[i] === 1 || (shots[i] === 2 && sunk(shipAt(g.mine, i)))) blocked[i] = 1;
+    for (k = 0; k < g.mine.length; k++) {
+      if (sunk(g.mine[k])) continue;
+      var L = g.mine[k].cells.length;
+      for (var dir = 0; dir < 2; dir++) for (var rr = 0; rr < N; rr++) for (var cc = 0; cc < N; cc++) {
+        var cells = [], bad = false, cover = 0;
+        for (var t = 0; t < L && !bad; t++) {
+          var r2 = dir ? rr + t : rr, c2 = dir ? cc : cc + t;
+          if (r2 >= N || c2 >= N || blocked[r2 * N + c2]) bad = true;
+          else { cells.push(r2 * N + c2); if (shots[r2 * N + c2] === 2) cover++; }
+        }
+        if (bad || (hits.length && !cover)) continue;
+        for (t = 0; t < cells.length; t++) if (!shots[cells[t]]) score[cells[t]] += 1 + cover * 20;
+      }
+    }
+    var best = unknown[0], bv = -1;
+    for (k = 0; k < unknown.length; k++) { var v = score[unknown[k]] + Math.random() * 0.5; if (v > bv) { bv = v; best = unknown[k]; } }
+    return best;
+  }
+
+  function table(ships, shots, S, showShips, clickable) {
+    var h = ['<table class="bs">'];
+    for (var i = 0; i < N * N; i++) {
+      if (i % N === 0) h.push('<tr>');
+      var s = shipAt(ships, i), cls = '', txt = '';
+      if (shots[i] === 1) txt = '&bull;';
+      else if (shots[i] === 2) { cls = sunk(s) ? 'sunk' : 'hit'; txt = '&times;'; }
+      else if (s && (showShips || g.over)) cls = 'ship';
+      h.push('<td' + (clickable ? ' data-sq="' + i + '"' : '') + ' class="' + cls + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.6) + 'px">' + txt + '</td>');
+      if (i % N === N - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    return h.join('');
+  }
+  function render() {
+    var left = 0;
+    for (var k = 0; k < g.theirs.length; k++) if (!sunk(g.theirs[k])) left++;
+    KG.text(statusEl, g.over || (busy ? 'Enemy is firing…' : 'Your turn' + (msg ? ' — ' + msg : '') + ' · enemy ships left: ' + left));
+    var W = Math.min((window.innerWidth || 600) - 24, 560), Hh = (window.innerHeight || 800) - 330;
+    var S = Math.max(22, Math.floor(Math.min(W, Hh * 0.64) / N) - 1), S2 = Math.max(14, Math.round(S * 0.55));
+    enemyEl.innerHTML = table(g.theirs, g.atThem, S, false, true);
+    mineEl.innerHTML = table(g.mine, g.atMe, S2, true, false);
+    KG.save(KEY, { level: level, g: g });
+  }
+
+  enemyEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, enemyEl, 'data-sq');
+    if (v === null || busy || g.over) return;
+    var p = parseInt(v, 10);
+    if (g.atThem[p]) return;
+    var res = fire(g.theirs, g.atThem, p);
+    msg = 'you ' + (res === 'miss' ? 'missed' : res);
+    if (allSunk(g.theirs)) { g.over = 'You win! You sank the whole enemy fleet.'; render(); return; }
+    busy = true;
+    render();
+    setTimeout(function () {
+      var q = aiShot(), r2 = fire(g.mine, g.atMe, q);
+      busy = false;
+      msg += '; enemy ' + (r2 === 'miss' ? 'missed' : r2) + ' at ' + 'ABCDEFGHIJ'.charAt(q % N) + (Math.floor(q / N) + 1);
+      if (allSunk(g.mine)) g.over = 'The enemy sank your fleet. Try again!';
+      render();
+    }, 300);
+  };
+  KG.$('newBtn').onclick = function () {
+    if (busy) return;
+    var started = false;
+    for (var i = 0; i < N * N; i++) if (g.atThem[i]) started = true;
+    if (started && !g.over && !window.confirm('Start a new game?')) return;
+    newGame(); render();
+  };
+  KG.$('placeBtn').onclick = function () {
+    for (var i = 0; i < N * N; i++) if (g.atThem[i] || g.atMe[i]) { msg = 'ships can only be moved before the first shot'; render(); return; }
+    g.mine = place(); render();
+  };
+  KG.buttonGroup('levels', level, function (v) { level = v; KG.save(KEY, { level: level, g: g }); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

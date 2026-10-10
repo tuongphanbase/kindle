@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Nonogram</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .ng { border-collapse: collapse; margin: 0 auto; }
+  .ng td { padding: 0; text-align: center; font-family: Arial, Helvetica, sans-serif; }
+  .ng .cell { border: 1px solid #777; background: #fff; vertical-align: middle; font-weight: bold; }
+  .ng .on { background: #000; }
+  .ng .xr { border-right: 2px solid #000; }
+  .ng .xb { border-bottom: 2px solid #000; }
+  .ng .ch { vertical-align: bottom; font-weight: bold; padding-bottom: 3px; }
+  .ng .rh { text-align: right; font-weight: bold; padding-right: 5px; white-space: nowrap; }
+  .ng .ok { color: #aaa; font-weight: normal; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Nonogram</span></div>
+<div class="controls" id="sizes">
+  <button data-v="5">5&times;5</button><button data-v="8">8&times;8</button><button data-v="10">10&times;10</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls" id="tools">
+  Tap to: <button data-v="f">Fill</button><button data-v="x">Mark &times;</button>
+</div>
+<div class="controls">
+  <button id="newBtn">New Puzzle</button><button id="clearBtn">Clear</button>
+</div>
+<p class="help">Fill in squares to match the numbers. The numbers beside each row (and above each column) give the
+lengths of the runs of filled squares in that line, in order, with at least one empty square between runs. Use
+<b>Mark &times;</b> to note squares you know are empty. A row or column's numbers turn grey when it matches. Tap a
+square again to undo it.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-nonogram';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '5', tool = 'f', g = saved.g || null;
+
+  function runs(arr) {
+    var out = [], n = 0;
+    for (var i = 0; i < arr.length; i++) { if (arr[i] === 1) n++; else if (n) { out.push(n); n = 0; } }
+    if (n) out.push(n);
+    return out.length ? out : [0];
+  }
+  function row(a, n, r) { var o = []; for (var c = 0; c < n; c++) o.push(a[r * n + c]); return o; }
+  function col(a, n, c) { var o = []; for (var r = 0; r < n; r++) o.push(a[r * n + c]); return o; }
+  function newGame() {
+    var n = parseInt(size, 10), sol = [], i;
+    for (i = 0; i < n * n; i++) sol.push(Math.random() < 0.58 ? 1 : 0);
+    var rc = [], cc = [];
+    for (i = 0; i < n; i++) { rc.push(runs(row(sol, n, i))); cc.push(runs(col(sol, n, i))); }
+    var cells = [];
+    for (i = 0; i < n * n; i++) cells.push(0);
+    g = { n: n, rc: rc, cc: cc, cells: cells, done: false, start: 0, secs: 0 };
+  }
+  if (!g || String(g.n) !== size) newGame();
+
+  function same(a, b) { return a.join(',') === b.join(','); }
+  function filled(line) { var o = []; for (var i = 0; i < line.length; i++) o.push(line[i] === 1 ? 1 : 0); return o; }
+
+  function render() {
+    var n = g.n, i, r, c, rowOk = [], colOk = [], all = true;
+    for (i = 0; i < n; i++) {
+      rowOk.push(same(runs(filled(row(g.cells, n, i))), g.rc[i]));
+      colOk.push(same(runs(filled(col(g.cells, n, i))), g.cc[i]));
+      if (!rowOk[i] || !colOk[i]) all = false;
+    }
+    if (all && !g.done) { g.done = true; g.secs = g.start ? Math.round((new Date().getTime() - g.start) / 1000) : 0; }
+    KG.text(statusEl, g.done ? 'Solved in ' + g.secs + ' s!' : 'Fill the squares to match every clue.');
+    var maxR = 1, maxC = 1;
+    for (i = 0; i < n; i++) { maxR = Math.max(maxR, g.rc[i].length); maxC = Math.max(maxC, g.cc[i].length); }
+    var W = Math.min((window.innerWidth || 600) - 24, 640), Hh = (window.innerHeight || 800) - 300;
+    var S = Math.floor(Math.min(W / (n + maxR * 0.55), Hh / (n + maxC * 0.6)));
+    var fs = Math.max(12, Math.round(S * 0.36)), h = ['<table class="ng"><tr><td></td>'];
+    for (c = 0; c < n; c++) h.push('<td class="ch' + (colOk[c] ? ' ok' : '') + '" style="font-size:' + fs + 'px;line-height:' + Math.round(fs * 1.15) + 'px">' + g.cc[c].join('<br>') + '</td>');
+    h.push('</tr>');
+    for (r = 0; r < n; r++) {
+      h.push('<tr><td class="rh' + (rowOk[r] ? ' ok' : '') + '" style="font-size:' + fs + 'px">' + g.rc[r].join(' ') + '</td>');
+      for (c = 0; c < n; c++) {
+        var v = g.cells[r * n + c], cls = 'cell' + (v === 1 ? ' on' : '') + ((c + 1) % 5 === 0 && c < n - 1 ? ' xr' : '') + ((r + 1) % 5 === 0 && r < n - 1 ? ' xb' : '');
+        h.push('<td data-sq="' + (r * n + c) + '" class="' + cls + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.6) + 'px">' + (v === 2 ? '&times;' : '') + '</td>');
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, g: g });
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || g.done) return;
+    var p = parseInt(v, 10), want = tool === 'f' ? 1 : 2;
+    if (!g.start) g.start = new Date().getTime();
+    g.cells[p] = g.cells[p] === want ? 0 : want;
+    render();
+  };
+  KG.buttonGroup('tools', tool, function (v) { tool = v; });
+  KG.buttonGroup('sizes', size, function (v) { size = v; newGame(); render(); });
+  KG.$('newBtn').onclick = function () {
+    if (!g.done && g.start && !window.confirm('Start a new puzzle?')) return;
+    newGame(); render();
+  };
+  KG.$('clearBtn').onclick = function () {
+    if (g.done) return;
+    for (var i = 0; i < g.cells.length; i++) g.cells[i] = 0;
+    render();
+  };
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

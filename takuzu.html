@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Takuzu</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .tz { border-collapse: collapse; margin: 0 auto; border: 3px solid #000; }
+  .tz td { padding: 0; border: 1px solid #777; text-align: center; vertical-align: middle; font-family: Arial, Helvetica, sans-serif; }
+  .tz .giv { font-weight: bold; background: #ddd; }
+  .tz .usr { font-weight: normal; }
+  .tz .bad { background: #000; color: #fff; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Takuzu</span></div>
+<div class="controls" id="sizes">
+  <button data-v="6">6&times;6</button><button data-v="8">8&times;8</button><button data-v="10">10&times;10</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="checkBtn">Check</button><button id="hintBtn">Hint</button><button id="newBtn">New Puzzle</button>
+</div>
+<p class="help">Binary puzzle. Fill every square with 0 or 1 (tap to change: blank &rarr; 0 &rarr; 1 &rarr; blank).
+Rules: no more than <b>two</b> of the same number next to each other in a row or column; every row and column has as
+many 0s as 1s; and no two rows (or two columns) are the same. Grey squares are given. Every puzzle can be solved by
+logic, without guessing.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-takuzu';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '6', g = saved.g || null, bad = {}, msg = '';
+
+  function lineIdx(n, k, isRow) { var o = []; for (var j = 0; j < n; j++) o.push(isRow ? k * n + j : j * n + k); return o; }
+  // Can value v go at p without breaking the three-in-a-row or half-and-half rules?
+  function fits(a, n, p, v) {
+    var r = Math.floor(p / n), c = p % n, lines = [lineIdx(n, r, true), lineIdx(n, c, false)], pos = [c, r];
+    for (var L = 0; L < 2; L++) {
+      var idx = lines[L], cnt = 0, i, vals = [];
+      for (i = 0; i < n; i++) { vals.push(idx[i] === p ? v : a[idx[i]]); if (vals[i] === v) cnt++; }
+      if (cnt > n / 2) return false;
+      for (i = Math.max(0, pos[L] - 2); i <= Math.min(n - 3, pos[L]); i++) if (vals[i] === v && vals[i + 1] === v && vals[i + 2] === v) return false;
+    }
+    return true;
+  }
+  // A just-finished row (or, on the last row, column) must not repeat an earlier one.
+  function freshLine(a, n, p) {
+    var r = Math.floor(p / n), c = p % n, k, j, same;
+    if (c === n - 1) {
+      for (k = 0; k < r; k++) { same = true; for (j = 0; j < n; j++) if (a[k * n + j] !== a[r * n + j]) { same = false; break; } if (same) return false; }
+    }
+    if (r === n - 1) {
+      for (k = 0; k < c; k++) { same = true; for (j = 0; j < n; j++) if (a[j * n + k] !== a[j * n + c]) { same = false; break; } if (same) return false; }
+    }
+    return true;
+  }
+  function fill(a, n, p, budget) {
+    if (p === n * n) return true;
+    if (--budget.left < 0) return false;
+    var vs = KG.shuffle([0, 1]);
+    for (var i = 0; i < 2; i++) {
+      if (!fits(a, n, p, vs[i])) continue;
+      a[p] = vs[i];
+      if (freshLine(a, n, p) && fill(a, n, p + 1, budget)) return true;
+    }
+    a[p] = -1;
+    return false;
+  }
+  // Fill blanks using only forced deductions. Returns true if the grid is completed.
+  function deduce(a, n) {
+    var changed = true, i;
+    while (changed) {
+      changed = false;
+      for (i = 0; i < n * n; i++) {
+        if (a[i] !== -1) continue;
+        var ok0 = fits(a, n, i, 0), ok1 = fits(a, n, i, 1);
+        if (ok0 && !ok1) { a[i] = 0; changed = true; }
+        else if (ok1 && !ok0) { a[i] = 1; changed = true; }
+      }
+      // A line with only two blanks left must not copy a finished line.
+      for (var L = 0; L < 2 * n && !changed; L++) {
+        var idx = lineIdx(n, L % n, L < n), blanks = [];
+        for (i = 0; i < n; i++) if (a[idx[i]] === -1) blanks.push(idx[i]);
+        if (blanks.length !== 2) continue;
+        for (var v = 0; v < 2 && !changed; v++) {
+          var t = a.slice(); t[blanks[0]] = v; t[blanks[1]] = 1 - v;
+          if (!fits(a, n, blanks[0], v) || !fits(t, n, blanks[1], 1 - v)) continue;
+          for (var M = 0; M < n; M++) {
+            if (M === L % n) continue;
+            var other = lineIdx(n, M, L < n), same = true;
+            for (var j = 0; j < n; j++) if (t[idx[j]] !== a[other[j]]) { same = false; break; }
+            if (same) { a[blanks[0]] = 1 - v; a[blanks[1]] = v; changed = true; break; }
+          }
+        }
+      }
+    }
+    for (i = 0; i < n * n; i++) if (a[i] === -1) return false;
+    return true;
+  }
+  function newGame() {
+    var n = parseInt(size, 10), sol = [], i;
+    for (i = 0; i < n * n; i++) sol.push(-1);
+    while (!fill(sol, n, 0, { left: 20000 })) { for (i = 0; i < n * n; i++) sol[i] = -1; }
+    var puz = sol.slice(), order = [];
+    for (i = 0; i < n * n; i++) order.push(i);
+    KG.shuffle(order);
+    for (i = 0; i < order.length; i++) {
+      var keep = puz[order[i]];
+      puz[order[i]] = -1;
+      var t = puz.slice();
+      if (!deduce(t, n)) puz[order[i]] = keep;
+    }
+    var cells = [];
+    for (i = 0; i < n * n; i++) cells.push({ v: puz[i], giv: puz[i] !== -1 });
+    g = { n: n, sol: sol, cells: cells, done: false };
+    bad = {}; msg = '';
+  }
+
+  function render() {
+    var n = g.n, i, blanks = 0;
+    for (i = 0; i < n * n; i++) if (g.cells[i].v === -1) blanks++;
+    KG.text(statusEl, g.done ? 'Solved!' : blanks + ' squares to fill' + (msg ? ' — ' + msg : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 600);
+    var S = Math.floor(W / n) - 1, h = ['<table class="tz">'];
+    for (i = 0; i < n * n; i++) {
+      if (i % n === 0) h.push('<tr>');
+      var c = g.cells[i];
+      h.push('<td data-sq="' + i + '" class="' + (c.giv ? 'giv' : 'usr') + (bad[i] ? ' bad' : '') + '" style="width:' + S + 'px;height:' + S +
+        'px;font-size:' + Math.round(S * 0.55) + 'px">' + (c.v === -1 ? '' : c.v) + '</td>');
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, g: g });
+  }
+  function checkDone() {
+    for (var i = 0; i < g.cells.length; i++) if (g.cells[i].v !== g.sol[i]) return;
+    g.done = true;
+  }
+
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || g.done) return;
+    var c = g.cells[parseInt(v, 10)];
+    if (c.giv) return;
+    c.v = c.v === -1 ? 0 : (c.v === 0 ? 1 : -1);
+    delete bad[parseInt(v, 10)];
+    msg = '';
+    checkDone();
+    render();
+  };
+  KG.$('checkBtn').onclick = function () {
+    bad = {}; var k = 0;
+    for (var i = 0; i < g.cells.length; i++) if (g.cells[i].v !== -1 && g.cells[i].v !== g.sol[i]) { bad[i] = 1; k++; }
+    msg = k ? k + ' wrong (shown in black)' : 'no mistakes so far';
+    render();
+  };
+  KG.$('hintBtn').onclick = function () {
+    if (g.done) return;
+    for (var i = 0; i < g.cells.length; i++) {
+      if (g.cells[i].v !== g.sol[i]) { g.cells[i].v = g.sol[i]; delete bad[i]; msg = 'filled one square'; checkDone(); render(); return; }
+    }
+  };
+  function fresh() { KG.text(statusEl, 'Making a new puzzle…'); setTimeout(function () { newGame(); render(); }, 50); }
+  KG.$('newBtn').onclick = fresh;
+  KG.buttonGroup('sizes', size, function (v) { size = v; fresh(); });
+  window.onresize = render;
+  if (!g || String(g.n) !== size) fresh(); else render();
+})();
+</script>
+</body>
+</html>

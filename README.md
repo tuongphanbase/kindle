@@ -16,6 +16,15 @@ A "Kindle Home" page of light games for the Kindle web browser (and any other e-
 - **Bốn Liên Tiếp**: Connect Four
 - **Xếp Số**: the sliding 15-puzzle in 3×3, 4×4 and 5×5
 - **Tắt Đèn**: Lights Out, getting harder each puzzle
+- **Cờ Úp**: Chinese chess with face-down pieces
+- **Xì Dách**: Vietnamese Blackjack against the dealer
+- **Đẩy Hộp**: Sokoban, 13 levels (all checked solvable)
+- **Nonogram**: picture logic puzzles, 5×5 to 10×10
+- **Takuzu**: binary 0/1 puzzles, all solvable by logic
+- **Hải Chiến**: Battleship against the computer
+- **Nhảy Quân**: Peg Solitaire, cross and French boards
+- **Đoán Chữ**: Hangman in English or Vietnamese (without accents)
+- **Đoán Mã**: Mastermind, three levels
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
 - **Ô Ăn Quan**: Vietnamese Mandarin Square Capturing, against the computer or a friend

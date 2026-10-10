@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Xi Dach</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .hand { text-align: center; margin: 6px 0 12px; min-height: 96px; }
+  .who { text-align: center; font-weight: bold; font-size: 18px; margin-top: 8px; }
+  .cd { display: inline-block; width: 60px; height: 84px; border: 2px solid #000; border-radius: 6px; -webkit-border-radius: 6px; margin: 3px;
+    background: #fff; font-family: Georgia, serif; font-weight: bold; font-size: 24px; line-height: 80px; text-align: center; vertical-align: top; }
+  .cd.red { background: #ddd; }
+  .cd.back { background: #888; }
+  .chips { text-align: center; font-size: 18px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">X&igrave; D&aacute;ch</span></div>
+<div class="chips" id="chips"></div>
+<div class="controls" id="bets">
+  Bet: <button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="50">50</button>
+</div>
+<div class="who">Nh&agrave; c&aacute;i (Dealer) <span id="dtot"></span></div>
+<div class="hand" id="dealer"></div>
+<div class="who">You <span id="ptot"></span></div>
+<div class="hand" id="player"></div>
+<div id="status" class="status" style="text-align:center"></div>
+<div class="controls">
+  <button id="hitBtn">R&uacute;t (Hit)</button><button id="standBtn">D&#7857;n (Stand)</button><button id="dealBtn">V&aacute;n m&#7899;i (Deal)</button>
+</div>
+<p class="help">Vietnamese Blackjack. Get closer to 21 than the dealer without going over. An Ace counts 10 or 11 in a
+two-card hand, 1 or 10 with three cards, and 1 with four or more. Special hands: <b>X&igrave; b&agrave;n</b> (two Aces)
+beats everything, then <b>X&igrave; d&aacute;ch</b> (Ace + 10, J, Q or K), then <b>Ng&#361; linh</b> (five cards, not
+over 21). You need at least 16 to stand. Over 21 is <b>qu&#7855;c</b> (bust). Special hands pay double. If you run
+out of chips you get 100 more.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-xidach', RANKS = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'], SUITS = ['&#9824;', '&#9825;', '&#9826;', '&#9827;'];
+  var saved = KG.load(KEY) || {};
+  var chips = saved.chips === undefined ? 100 : saved.chips, bet = saved.bet || '10', g = null;
+
+  function rank(c) { return c % 13 + 1; }
+  function total(hand) {
+    var base = 0, aces = 0, n = hand.length, i;
+    for (i = 0; i < n; i++) { var r = rank(hand[i]); if (r === 1) aces++; else base += r >= 10 ? 10 : r; }
+    var choices = n <= 2 ? [11, 10] : (n === 3 ? [10, 1] : [1]), best = -1, worst = 99;
+    // Try every way of counting the aces; keep the best total that does not go over 21.
+    function rec(k, sum) {
+      if (k === aces) { if (sum <= 21 && sum > best) best = sum; if (sum < worst) worst = sum; return; }
+      for (var j = 0; j < choices.length; j++) rec(k + 1, sum + choices[j]);
+    }
+    rec(0, base);
+    return best >= 0 ? best : worst;
+  }
+  // Hand strength: 5 xi ban, 4 xi dach, 3 ngu linh, 1 normal (value), 0 bust.
+  function kind(hand) {
+    if (hand.length === 2 && rank(hand[0]) === 1 && rank(hand[1]) === 1) return 5;
+    if (hand.length === 2 && (rank(hand[0]) === 1 || rank(hand[1]) === 1) && (rank(hand[0]) >= 10 || rank(hand[1]) >= 10)) return 4;
+    var t = total(hand);
+    if (t > 21) return 0;
+    if (hand.length === 5) return 3;
+    return 1;
+  }
+  var NAMES = ['quắc (bust)', '', '', 'Ngũ linh', 'Xì dách', 'Xì bàn'];
+
+  function deal() {
+    var deck = [];
+    for (var i = 0; i < 52; i++) deck.push(i);
+    KG.shuffle(deck);
+    if (chips <= 0) chips = 100;
+    var b = Math.min(parseInt(bet, 10), chips);
+    g = { deck: deck, p: [deck.pop(), deck.pop()], d: [deck.pop(), deck.pop()], bet: b, over: false, msg: '' };
+    var kp = kind(g.p), kd = kind(g.d);
+    if (kp >= 4 || kd >= 4) finish();
+    render();
+  }
+  function settle(res, mult) {
+    if (res > 0) { chips += g.bet * mult; g.msg = 'You win ' + g.bet * mult + '! ' + g.msg; }
+    else if (res < 0) { chips -= g.bet * mult; g.msg = 'You lose ' + g.bet * mult + '. ' + g.msg; }
+    else g.msg = 'Draw (hòa). ' + g.msg;
+  }
+  function finish() {
+    var kp = kind(g.p), kd = kind(g.d);
+    // The dealer draws to at least 15 unless already holding something special.
+    while (kp !== 0 && kd === 1 && total(g.d) < 15 && g.d.length < 5) { g.d.push(g.deck.pop()); kd = kind(g.d); }
+    g.over = true;
+    var tp = total(g.p), td = total(g.d);
+    var sp = kp === 1 ? tp : kp * 100, sd = kd === 1 ? td : kd * 100;
+    if (kp === 0 && kd === 0) { g.msg = 'Both bust.'; settle(0, 1); }
+    else if (kp === 0) { g.msg = 'You went over 21.'; settle(-1, 1); }
+    else if (kd === 0) { g.msg = 'Dealer went over 21.'; settle(1, kp >= 3 ? 2 : 1); }
+    else if (sp > sd) { g.msg = kp >= 3 ? NAMES[kp] + '!' : tp + ' beats ' + td + '.'; settle(1, kp >= 3 ? 2 : 1); }
+    else if (sp < sd) { g.msg = kd >= 3 ? 'Dealer has ' + NAMES[kd] + '.' : td + ' beats ' + tp + '.'; settle(-1, kd >= 3 ? 2 : 1); }
+    else { g.msg = 'Same score.'; settle(0, 1); }
+  }
+
+  function cards(hand, hideSecond) {
+    var h = [];
+    for (var i = 0; i < hand.length; i++) {
+      if (hideSecond && i > 0) { h.push('<span class="cd back"></span>'); continue; }
+      var c = hand[i], s = Math.floor(c / 13);
+      h.push('<span class="cd' + (s === 1 || s === 2 ? ' red' : '') + '">' + RANKS[rank(c)] + SUITS[s] + '</span>');
+    }
+    return h.join('');
+  }
+  function render() {
+    KG.text(KG.$('chips'), 'Chips: ' + chips + (g ? ' · this hand: ' + g.bet : ''));
+    if (!g) { KG.text(KG.$('status'), 'Choose a bet and press Deal.'); KG.$('dealer').innerHTML = ''; KG.$('player').innerHTML = ''; KG.text(KG.$('dtot'), ''); KG.text(KG.$('ptot'), ''); }
+    else {
+      KG.$('dealer').innerHTML = cards(g.d, !g.over);
+      KG.$('player').innerHTML = cards(g.p, false);
+      var kp = kind(g.p);
+      KG.text(KG.$('ptot'), '(' + total(g.p) + (kp !== 1 ? ' — ' + NAMES[kp] : '') + ')');
+      KG.text(KG.$('dtot'), g.over ? '(' + total(g.d) + (kind(g.d) !== 1 ? ' — ' + NAMES[kind(g.d)] : '') + ')' : '');
+      var tp = total(g.p);
+      KG.text(KG.$('status'), g.over ? g.msg + ' Press Deal for another hand.' : (tp < 16 ? 'You have ' + tp + ' — you must draw to at least 16.' : 'Hit or stand?'));
+    }
+    KG.save(KEY, { chips: chips, bet: bet });
+  }
+  KG.$('hitBtn').onclick = function () {
+    if (!g || g.over || g.p.length >= 5) return;
+    g.p.push(g.deck.pop());
+    if (kind(g.p) === 0 || g.p.length === 5) finish();
+    render();
+  };
+  KG.$('standBtn').onclick = function () {
+    if (!g || g.over || total(g.p) < 16) return;
+    finish(); render();
+  };
+  KG.$('dealBtn').onclick = function () { if (!g || g.over) deal(); };
+  KG.buttonGroup('bets', bet, function (v) { bet = v; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

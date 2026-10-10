@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Doan Chu</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .word { text-align: center; font-family: "Courier New", Courier, monospace; font-size: 30px; font-weight: bold; letter-spacing: 6px; margin: 10px 0; word-wrap: break-word; }
+  .gal { text-align: center; }
+  .gal pre { display: inline-block; text-align: left; font-family: "Courier New", Courier, monospace; font-size: 20px; line-height: 22px; margin: 4px 0; }
+  .keys { text-align: center; }
+  .keys button { width: 46px; height: 46px; font-size: 20px; font-weight: bold; margin: 2px; padding: 0; }
+  .keys button.used { border-style: dotted; color: #999; }
+  .hint { text-align: center; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">&#272;o&aacute;n Ch&#7919;</span></div>
+<div class="controls" id="langs">
+  <button data-v="en">English</button><button data-v="vi">Ti&#7871;ng Vi&#7879;t (kh&ocirc;ng d&#7845;u)</button>
+</div>
+<div id="status" class="status"></div>
+<div class="hint" id="hint"></div>
+<div class="gal"><pre id="gal"></pre></div>
+<div class="word" id="word"></div>
+<div class="keys" id="keys"></div>
+<div class="controls">
+  <button id="newBtn">New Word</button>
+</div>
+<p class="help">Hangman. Guess the hidden word one letter at a time. Every wrong letter adds a piece to the drawing &mdash;
+seven wrong guesses and the game is over. The category is shown above the drawing. Vietnamese words are written
+without accents (kh&ocirc;ng d&#7845;u).</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-doanchu', MAX = 7;
+  var WORDS = {
+    en: {
+      'Animal': ['ELEPHANT', 'GIRAFFE', 'KANGAROO', 'PENGUIN', 'DOLPHIN', 'TIGER', 'RABBIT', 'TURTLE', 'BUTTERFLY', 'SQUIRREL', 'CROCODILE', 'OCTOPUS', 'HEDGEHOG', 'PARROT', 'ZEBRA', 'MONKEY', 'SPIDER', 'EAGLE', 'WHALE', 'BUFFALO'],
+      'Fruit & food': ['BANANA', 'MANGO', 'PINEAPPLE', 'COCONUT', 'STRAWBERRY', 'WATERMELON', 'PAPAYA', 'DURIAN', 'NOODLES', 'SANDWICH', 'CHOCOLATE', 'PANCAKE', 'BISCUIT', 'CABBAGE', 'POTATO', 'PUMPKIN', 'ORANGE', 'LYCHEE'],
+      'Country': ['VIETNAM', 'JAPAN', 'BRAZIL', 'CANADA', 'AUSTRALIA', 'GERMANY', 'MEXICO', 'EGYPT', 'FRANCE', 'THAILAND', 'NORWAY', 'ARGENTINA', 'KOREA', 'INDIA', 'ITALY', 'SPAIN', 'KENYA', 'PERU'],
+      'Around the house': ['KITCHEN', 'WINDOW', 'PILLOW', 'BLANKET', 'MIRROR', 'TOOTHBRUSH', 'UMBRELLA', 'BICYCLE', 'GARDEN', 'CANDLE', 'LADDER', 'BASKET', 'SCISSORS', 'TELEPHONE', 'CURTAIN', 'BOOKSHELF']
+    },
+    vi: {
+      'Con vat': ['CON MEO', 'CON CHO', 'CON TRAU', 'CON VOI', 'CON HO', 'CON KHI', 'CON GA', 'CON VIT', 'CON CA', 'CON RUA', 'CON THO', 'CON NGUA', 'CON CHIM', 'CON BUOM', 'CON ONG', 'CON KIEN', 'CON CUA', 'CON TOM'],
+      'Trai cay': ['QUA CAM', 'QUA XOAI', 'QUA DUA', 'QUA CHUOI', 'QUA TAO', 'QUA NHO', 'SAU RIENG', 'MANG CUT', 'CHOM CHOM', 'THANH LONG', 'DUA HAU', 'QUA BUOI', 'QUA OI', 'VU SUA', 'QUA MIT', 'QUA VAI'],
+      'Do vat': ['CAI BAN', 'CAI GHE', 'CAI BUT', 'QUYEN SACH', 'CAI DEN', 'CAI QUAT', 'CAI KEO', 'CAI THIA', 'CAI BAT', 'CAI NON', 'XE DAP', 'DONG HO', 'CAI GUONG', 'CAI GOI', 'CAI CHAN', 'TU LANH'],
+      'Dia danh': ['HA NOI', 'SAI GON', 'DA NANG', 'HUE', 'HAI PHONG', 'CAN THO', 'NHA TRANG', 'DA LAT', 'VUNG TAU', 'HA LONG', 'SA PA', 'PHU QUOC', 'QUY NHON', 'HOI AN', 'NINH BINH', 'CA MAU']
+    }
+  };
+  var STAGES = [
+    ['      ', '      ', '      ', '      ', '      ', '______'],
+    ['  |   ', '  |   ', '  |   ', '  |   ', '  |   ', '__|___'],
+    ['  +---', '  |   ', '  |   ', '  |   ', '  |   ', '__|___'],
+    ['  +---+', '  |   |', '  |   ', '  |   ', '  |   ', '__|___'],
+    ['  +---+', '  |   |', '  |   O', '  |   ', '  |   ', '__|___'],
+    ['  +---+', '  |   |', '  |   O', '  |   |', '  |   ', '__|___'],
+    ['  +---+', '  |   |', '  |   O', '  |  /|\\', '  |   ', '__|___'],
+    ['  +---+', '  |   |', '  |   O', '  |  /|\\', '  |  / \\', '__|___']
+  ];
+  var saved = KG.load(KEY) || {};
+  var lang = saved.lang || 'en', g = saved.g || null, stats = saved.stats || { w: 0, l: 0 };
+
+  function newWord() {
+    var cats = [], k;
+    for (k in WORDS[lang]) if (WORDS[lang].hasOwnProperty(k)) cats.push(k);
+    var cat = cats[Math.floor(Math.random() * cats.length)], list = WORDS[lang][cat];
+    g = { cat: cat, word: list[Math.floor(Math.random() * list.length)], guessed: '', wrong: 0, over: '' };
+  }
+  if (!g) newWord();
+
+  function render() {
+    var shown = [], done = true, i;
+    for (i = 0; i < g.word.length; i++) {
+      var ch = g.word.charAt(i);
+      if (ch === ' ') shown.push('&nbsp;&nbsp;');
+      else if (g.guessed.indexOf(ch) >= 0 || g.over) shown.push(ch);
+      else { shown.push('_'); done = false; }
+    }
+    if (done && !g.over) { g.over = 'win'; stats.w++; }
+    if (g.wrong >= MAX && !g.over) { g.over = 'lose'; stats.l++; }
+    var st = g.over === 'win' ? 'You got it!' : (g.over === 'lose' ? 'Out of guesses — the word was ' + g.word + '.' : 'Wrong guesses: ' + g.wrong + ' of ' + MAX);
+    KG.text(KG.$('status'), st + '   (won ' + stats.w + ', lost ' + stats.l + ')');
+    KG.text(KG.$('hint'), 'Category: ' + g.cat);
+    KG.$('gal').innerHTML = STAGES[g.wrong].join('\n').replace(/</g, '&lt;');
+    KG.$('word').innerHTML = shown.join(' ');
+    var h = [], A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for (i = 0; i < 26; i++) {
+      var L = A.charAt(i);
+      h.push('<button data-k="' + L + '" class="' + (g.guessed.indexOf(L) >= 0 ? 'used' : '') + '">' + L + '</button>');
+      if (i === 8 || i === 17) h.push('<br>');
+    }
+    KG.$('keys').innerHTML = h.join('');
+    KG.save(KEY, { lang: lang, g: g, stats: stats });
+  }
+  KG.$('keys').onclick = function (e) {
+    var L = KG.attrFromEvent(e, KG.$('keys'), 'data-k');
+    if (L === null || g.over || g.guessed.indexOf(L) >= 0) return;
+    g.guessed += L;
+    if (g.word.indexOf(L) < 0) g.wrong++;
+    render();
+  };
+  KG.$('newBtn').onclick = function () { newWord(); render(); };
+  KG.buttonGroup('langs', lang, function (v) { lang = v; newWord(); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

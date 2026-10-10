@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Day Hop</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .sk { border-collapse: collapse; margin: 0 auto; }
+  .sk td { padding: 0; text-align: center; vertical-align: middle; font-weight: bold; }
+  .sk .w { background: #000; }
+  .sk .f { background: #fff; }
+  .sk .g { background: #ccc; }
+  .sk .bx { border: 3px solid #000; background: #fff; }
+  .sk .bxg { border: 3px solid #000; background: #000; color: #fff; }
+  .pad { text-align: center; margin: 6px 0; }
+  .pad button { width: 80px; height: 52px; font-size: 22px; font-weight: bold; }
+  .pad .mid { display: inline-block; width: 80px; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">&#272;&#7849;y H&#7897;p</span></div>
+<div class="controls">
+  <button id="prevBtn">&larr; Level</button> <b id="lvl"></b> <button id="nextBtn">Level &rarr;</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="pad">
+  <button id="up">&uarr;</button><br>
+  <button id="left">&larr;</button><span class="mid"></span><button id="right">&rarr;</button><br>
+  <button id="down">&darr;</button>
+</div>
+<div class="controls">
+  <button id="undoBtn">Undo</button><button id="resetBtn">Restart</button>
+</div>
+<p class="help">Sokoban. You are the black dot (P). Push every box (B) onto a grey target square &mdash; a box on a
+target turns black. You can only push one box at a time, and you can't pull. Use the arrows, or tap a square next to
+you. If you get stuck, use Undo or Restart.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-dayhop';
+  var LEVELS = [
+    ["#####", "#@$.#", "#####"],
+    ["  ####", "###  #", "#. $ #", "#.$@ #", "#  ###", "####"],
+    ["######", "#    #", "# $$ #", "#@.. #", "######"],
+    ["#######", "#  .  #", "# #$# #", "#.$@$.#", "# #$# #", "#  .  #", "#######"],
+    ["#######", "#.  @ #", "#.$$  #", "#.$  ##", "#    #", "######"],
+    [" ####", " #  ###", " # $  #", "## . .#", "#  *$ #", "#  @ ##", "######"],
+    ["#######", "#     #", "# $.$ #", "# .@. #", "# $.$ #", "#     #", "#######"],
+    [" #####", " #   #", " #$  #", "##  $##", "#  $ .#", "# . . #", "#  @ ##", "######"],
+    ["#########", "#   #   #", "# $ . $ #", "#.  @  .#", "# $ . $ #", "#   #   #", "#########"],
+    ["  #####", "  #   #", "### # ###", "#  $.$  #", "# #.@.# #", "#  $.$  #", "### # ###", "  #   #", "  #####"],
+    ["########", "#  .   #", "# $#$  #", "# .@.  #", "#  $#$ #", "#   .  #", "########"],
+    ["  #####", "###   #", "#.@$  #", "### $.#", "#.##$ #", "# # . ##", "#$ *$$.#", "#   .  #", "########"],
+    ["  ######", "  #    #", "###$$$ #", "#@ $.. #", "# $...##", "####  #", "   ####"]
+  ];
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var lvl = saved.lvl || 0, solved = saved.solved || {}, g = null;
+
+  function load() {
+    var L = LEVELS[lvl], H = L.length, W = 0, r, c;
+    for (r = 0; r < H; r++) W = Math.max(W, L[r].length);
+    var wall = [], goal = [], box = [], pl = 0;
+    for (r = 0; r < H; r++) for (c = 0; c < W; c++) {
+      var ch = L[r].charAt(c) || ' ';
+      wall.push(ch === '#' ? 1 : 0);
+      goal.push(ch === '.' || ch === '*' || ch === '+' ? 1 : 0);
+      box.push(ch === '$' || ch === '*' ? 1 : 0);
+      if (ch === '@' || ch === '+') pl = r * W + c;
+    }
+    // Squares outside the walls are drawn blank: flood-fill from the player to find the inside.
+    var inside = [], stack = [pl];
+    for (r = 0; r < W * H; r++) inside.push(0);
+    inside[pl] = 1;
+    while (stack.length) {
+      var p = stack.pop(), pr = Math.floor(p / W), pc = p % W, nb = [[pr - 1, pc], [pr + 1, pc], [pr, pc - 1], [pr, pc + 1]];
+      for (var k = 0; k < 4; k++) {
+        var q = nb[k][0] * W + nb[k][1];
+        if (nb[k][0] < 0 || nb[k][0] >= H || nb[k][1] < 0 || nb[k][1] >= W || inside[q] || wall[q]) continue;
+        inside[q] = 1; stack.push(q);
+      }
+    }
+    g = { W: W, H: H, wall: wall, goal: goal, box: box, inside: inside, pl: pl, moves: 0, pushes: 0, hist: [], done: false };
+  }
+
+  function move(dr, dc) {
+    if (g.done) return;
+    var r = Math.floor(g.pl / g.W) + dr, c = g.pl % g.W + dc;
+    if (r < 0 || r >= g.H || c < 0 || c >= g.W) return;
+    var p = r * g.W + c;
+    if (g.wall[p]) return;
+    var pushed = -1;
+    if (g.box[p]) {
+      var r2 = r + dr, c2 = c + dc, p2 = r2 * g.W + c2;
+      if (r2 < 0 || r2 >= g.H || c2 < 0 || c2 >= g.W || g.wall[p2] || g.box[p2]) return;
+      g.box[p] = 0; g.box[p2] = 1; pushed = p; g.pushes++;
+    }
+    g.hist.push({ pl: g.pl, from: pushed, to: pushed >= 0 ? (r + dr) * g.W + c + dc : -1 });
+    g.pl = p; g.moves++;
+    var left = 0;
+    for (var i = 0; i < g.box.length; i++) if (g.box[i] && !g.goal[i]) left++;
+    if (!left) { g.done = true; solved[lvl] = Math.min(solved[lvl] || 99999, g.moves); }
+    render();
+  }
+
+  function render() {
+    KG.text(KG.$('lvl'), (lvl + 1) + ' / ' + LEVELS.length + (solved[lvl] ? ' ✓' : ''));
+    KG.text(statusEl, g.done ? 'Solved in ' + g.moves + ' moves! ' + (lvl < LEVELS.length - 1 ? 'Tap Level → for the next one.' : 'You finished every level!')
+      : 'Moves: ' + g.moves + ' · Pushes: ' + g.pushes + (solved[lvl] ? ' (best ' + solved[lvl] + ')' : ''));
+    var Wpx = Math.min((window.innerWidth || 600) - 24, 640), Hpx = (window.innerHeight || 800) - 400;
+    var S = Math.max(24, Math.min(64, Math.floor(Math.min(Wpx / g.W, Hpx / g.H)))), h = ['<table class="sk">'];
+    for (var i = 0; i < g.W * g.H; i++) {
+      if (i % g.W === 0) h.push('<tr>');
+      var cls, txt = '';
+      if (g.wall[i]) cls = 'w';
+      else if (!g.inside[i]) cls = '';
+      else if (g.box[i]) { cls = g.goal[i] ? 'bxg' : 'bx'; txt = 'B'; }
+      else cls = g.goal[i] ? 'g' : 'f';
+      if (i === g.pl) txt = '<div style="width:' + Math.round(S * 0.6) + 'px;height:' + Math.round(S * 0.6) + 'px;margin:0 auto;background:#000;color:#fff;border-radius:50%;-webkit-border-radius:50%;line-height:' +
+        Math.round(S * 0.6) + 'px;font-size:' + Math.round(S * 0.32) + 'px">P</div>';
+      h.push('<td data-sq="' + i + '" class="' + cls + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.45) + 'px">' + txt + '</td>');
+      if (i % g.W === g.W - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { lvl: lvl, solved: solved });
+  }
+
+  KG.$('up').onclick = function () { move(-1, 0); };
+  KG.$('down').onclick = function () { move(1, 0); };
+  KG.$('left').onclick = function () { move(0, -1); };
+  KG.$('right').onclick = function () { move(0, 1); };
+  document.onkeydown = function (e) {
+    e = e || window.event;
+    var m = { 38: [-1, 0], 40: [1, 0], 37: [0, -1], 39: [0, 1] }[e.keyCode];
+    if (m) { move(m[0], m[1]); if (e.preventDefault) e.preventDefault(); return false; }
+  };
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null) return;
+    var p = parseInt(v, 10), dr = Math.floor(p / g.W) - Math.floor(g.pl / g.W), dc = p % g.W - g.pl % g.W;
+    if (Math.abs(dr) + Math.abs(dc) === 1) move(dr, dc);
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (!g.hist.length || g.done) return;
+    var h = g.hist.pop();
+    if (h.from >= 0) { g.box[h.to] = 0; g.box[h.from] = 1; g.pushes--; }
+    g.pl = h.pl; g.moves--;
+    render();
+  };
+  KG.$('resetBtn').onclick = function () { load(); render(); };
+  KG.$('prevBtn').onclick = function () { if (lvl > 0) { lvl--; load(); render(); } };
+  KG.$('nextBtn').onclick = function () { if (lvl < LEVELS.length - 1) { lvl++; load(); render(); } };
+  window.onresize = render;
+  load();
+  render();
+})();
+</script>
+</body>
+</html>

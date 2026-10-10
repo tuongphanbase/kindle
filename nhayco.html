@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Peg Solitaire</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .pg { border-collapse: collapse; margin: 0 auto; }
+  .pg td { padding: 0; }
+  .pg .in { position: relative; }
+  .pg .hole { position: absolute; border: 2px solid #000; background: #fff; border-radius: 50%; -webkit-border-radius: 50%; }
+  .pg .peg { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .pg .tgt { position: absolute; background: #999; border-radius: 50%; -webkit-border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Nh&#7843;y Qu&acirc;n</span></div>
+<div class="controls" id="boards">
+  <button data-v="en">Cross (33)</button><button data-v="fr">French (37)</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="undoBtn">Undo</button><button id="resetBtn">Restart</button>
+</div>
+<p class="help">Peg Solitaire. Tap a peg (black), then tap an empty hole two places away in a straight line, across or
+up and down. The peg jumps over its neighbour, and the neighbour is removed. Grey dots show where the chosen peg can
+land. Try to finish with just one peg left &mdash; in the centre for a perfect game!</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-nhayco', N = 7;
+  var SHAPES = {
+    en: ['  ooo  ', '  ooo  ', 'ooooooo', 'ooo.ooo', 'ooooooo', '  ooo  ', '  ooo  '],
+    fr: ['  ooo  ', ' ooooo ', 'ooo.ooo', 'ooooooo', 'ooooooo', ' ooooo ', '  ooo  ']
+  };
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var shape = saved.shape || 'en', g = saved.g || null, sel = -1;
+
+  function newGame() {
+    var a = [], rows = SHAPES[shape];
+    for (var r = 0; r < N; r++) for (var c = 0; c < N; c++) {
+      var ch = rows[r].charAt(c);
+      a.push(ch === 'o' ? 1 : (ch === '.' ? 0 : -1));
+    }
+    g = { a: a, hist: [] };
+    sel = -1;
+  }
+  if (!g) newGame();
+
+  function jumpsFrom(p) {
+    var out = [], r = Math.floor(p / N), c = p % N, D = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    if (g.a[p] !== 1) return out;
+    for (var k = 0; k < 4; k++) {
+      var mr = r + D[k][0], mc = c + D[k][1], tr = r + 2 * D[k][0], tc = c + 2 * D[k][1];
+      if (tr < 0 || tr >= N || tc < 0 || tc >= N) continue;
+      if (g.a[mr * N + mc] === 1 && g.a[tr * N + tc] === 0) out.push({ t: tr * N + tc, m: mr * N + mc });
+    }
+    return out;
+  }
+  function render() {
+    var pegs = 0, anyMove = false, i;
+    for (i = 0; i < N * N; i++) { if (g.a[i] === 1) { pegs++; if (jumpsFrom(i).length) anyMove = true; } }
+    var txt = 'Pegs left: ' + pegs;
+    if (!anyMove) txt = pegs === 1 ? (g.a[24] === 1 ? 'Perfect! One peg, right in the centre!' : 'Excellent — only one peg left!')
+      : 'No more moves. ' + pegs + ' pegs left' + (pegs <= 3 ? ' — very good!' : '.');
+    KG.text(statusEl, txt);
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 560);
+    var S = Math.floor(W / N), big = Math.round(S * 0.7), off = Math.round((S - big) / 2), tg = {}, h = ['<table class="pg">'];
+    if (sel >= 0) { var js = jumpsFrom(sel); for (i = 0; i < js.length; i++) tg[js[i].t] = 1; }
+    for (i = 0; i < N * N; i++) {
+      if (i % N === 0) h.push('<tr>');
+      h.push('<td data-sq="' + i + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">');
+      if (g.a[i] >= 0) {
+        h.push('<div class="hole" style="left:' + off + 'px;top:' + off + 'px;width:' + big + 'px;height:' + big + 'px"></div>');
+        var inner = Math.round(big * (i === sel ? 0.5 : 0.8)), io = Math.round((S - inner) / 2);
+        if (g.a[i] === 1) h.push('<div class="peg" style="left:' + io + 'px;top:' + io + 'px;width:' + inner + 'px;height:' + inner + 'px"></div>');
+        if (tg[i]) { var d = Math.round(big * 0.4), dof = Math.round((S - d) / 2); h.push('<div class="tgt" style="left:' + dof + 'px;top:' + dof + 'px;width:' + d + 'px;height:' + d + 'px"></div>'); }
+      }
+      h.push('</div></td>');
+      if (i % N === N - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { shape: shape, g: g });
+  }
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null) return;
+    var p = parseInt(v, 10);
+    if (sel >= 0) {
+      var js = jumpsFrom(sel);
+      for (var k = 0; k < js.length; k++) if (js[k].t === p) {
+        g.hist.push(g.a.slice());
+        g.a[sel] = 0; g.a[js[k].m] = 0; g.a[p] = 1;
+        sel = -1; render(); return;
+      }
+    }
+    sel = g.a[p] === 1 && p !== sel ? p : -1;
+    render();
+  };
+  KG.$('undoBtn').onclick = function () { if (g.hist.length) { g.a = g.hist.pop(); sel = -1; render(); } };
+  KG.$('resetBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('boards', shape, function (v) { shape = v; newGame(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>
