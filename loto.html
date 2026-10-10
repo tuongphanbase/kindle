@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Lo To</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .lt { border-collapse: collapse; margin: 0 auto; border: 3px solid #000; }
+  .lt td { padding: 0; border: 1px solid #000; text-align: center; vertical-align: middle; font-weight: bold; font-family: Georgia, serif; }
+  .lt .blank { background: #bbb; }
+  .lt .mk { background: #000; color: #fff; }
+  .call { text-align: center; margin: 6px 0; }
+  .call .big { display: inline-block; min-width: 90px; font-size: 40px; font-weight: bold; border: 3px solid #000; border-radius: 10px; -webkit-border-radius: 10px; padding: 2px 12px; }
+  .recent { text-align: center; font-size: 15px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">L&ocirc; T&ocirc;</span></div>
+<div id="status" class="status" style="text-align:center"></div>
+<div class="call"><span class="big" id="big">&ndash;</span></div>
+<div class="recent" id="recent"></div>
+<div id="board"></div>
+<div class="controls">
+  <button id="callBtn">G&#7885;i s&#7889; (Call)</button><button id="kinhBtn">Kinh!</button><button id="newBtn">New Game</button>
+</div>
+<div class="controls" id="autos">Mark: <button data-v="0">By hand</button><button data-v="1">Automatically</button></div>
+<p class="help">L&ocirc; t&ocirc; (Vietnamese bingo) against two computer players. Press <b>G&#7885;i s&#7889;</b> to call
+the next number from 1 to 90, then tap it on your ticket if you have it. When every number in one row of your ticket
+is marked, press <b>Kinh!</b> before the next call &mdash; the computer players shout as soon as they see the next
+call.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-loto';
+  var saved = KG.load(KEY) || {};
+  var auto = saved.auto || '0', g = saved.g || null, msg = '';
+
+  // A ticket: 9 rows x 9 columns, 5 numbers per row; column c holds 1-9, 10-19, ... 80-90.
+  function ticket() {
+    var t = [], used = {}, r, c;
+    for (r = 0; r < 9; r++) {
+      var cols = KG.shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, 5), row = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (var k = 0; k < 5; k++) {
+        c = cols[k];
+        var lo = c === 0 ? 1 : c * 10, hi = c === 8 ? 90 : c * 10 + 9, v;
+        do { v = lo + Math.floor(Math.random() * (hi - lo + 1)); } while (used[v]);
+        used[v] = 1; row[c] = v;
+      }
+      t.push(row);
+    }
+    return t;
+  }
+  function newGame() {
+    var bag = [];
+    for (var i = 1; i <= 90; i++) bag.push(i);
+    g = { mine: ticket(), cpu: [ticket(), ticket()], bag: KG.shuffle(bag), called: [], marked: {}, over: '' };
+    msg = 'Press Gọi số to start.';
+  }
+  if (!g) newGame();
+
+  function calledSet() { var s = {}; for (var i = 0; i < g.called.length; i++) s[g.called[i]] = 1; return s; }
+  function fullRow(t, ok) {
+    for (var r = 0; r < 9; r++) {
+      var full = true;
+      for (var c = 0; c < 9; c++) if (t[r][c] && !ok[t[r][c]]) { full = false; break; }
+      if (full) return r;
+    }
+    return -1;
+  }
+  function render() {
+    var last = g.called.length ? g.called[g.called.length - 1] : 0;
+    KG.text(KG.$('status'), g.over || msg || ('Numbers called: ' + g.called.length));
+    KG.$('big').innerHTML = last ? String(last) : '&ndash;';
+    KG.text(KG.$('recent'), g.called.length > 1 ? 'Before: ' + g.called.slice(Math.max(0, g.called.length - 9), g.called.length - 1).reverse().join(', ') : '');
+    var W = Math.min((window.innerWidth || 600) - 24, 600), S = Math.max(30, Math.min(Math.floor(W / 9) - 1, Math.floor(((window.innerHeight || 800) - 360) / 9))), h = ['<table class="lt">'];
+    for (var r = 0; r < 9; r++) {
+      h.push('<tr>');
+      for (var c = 0; c < 9; c++) {
+        var v = g.mine[r][c];
+        h.push('<td data-n="' + v + '" class="' + (!v ? 'blank' : (g.marked[v] ? 'mk' : '')) + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.5) + 'px">' + (v || '') + '</td>');
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { auto: auto, g: g });
+  }
+  KG.$('callBtn').onclick = function () {
+    if (g.over) return;
+    var ok = calledSet();
+    for (var k = 0; k < 2; k++) if (fullRow(g.cpu[k], ok) >= 0) { g.over = 'Computer ' + (k + 1) + ' shouts Kinh! and wins. Press New Game to play again.'; render(); return; }
+    if (!g.bag.length) { g.over = 'All numbers called.'; render(); return; }
+    var n = g.bag.pop();
+    g.called.push(n);
+    msg = '';
+    if (auto === '1') for (var r = 0; r < 9; r++) for (var c = 0; c < 9; c++) if (g.mine[r][c] === n) g.marked[n] = 1;
+    render();
+  };
+  KG.$('kinhBtn').onclick = function () {
+    if (g.over) return;
+    var ok = calledSet(), mk = {};
+    for (var key in g.marked) if (g.marked.hasOwnProperty(key) && ok[key]) mk[key] = 1;
+    var r = fullRow(g.mine, mk);
+    if (r >= 0) g.over = 'Kinh! Row ' + (r + 1) + ' is complete — you win!';
+    else msg = 'Not yet — no row is fully marked.';
+    render();
+  };
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-n');
+    if (v === null || v === '0' || g.over) return;
+    var n = parseInt(v, 10);
+    if (!calledSet()[n] && !g.marked[n]) { msg = n + ' has not been called yet.'; render(); return; }
+    if (g.marked[n]) delete g.marked[n]; else g.marked[n] = 1;
+    msg = '';
+    render();
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.called.length && !g.over && !window.confirm('Start a new game?')) return;
+    newGame(); render();
+  };
+  KG.buttonGroup('autos', auto, function (v) { auto = v; render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

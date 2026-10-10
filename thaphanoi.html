@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Thap Ha Noi</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .hn { border-collapse: separate; border-spacing: 6px 0; margin: 0 auto; }
+  .hn td { vertical-align: bottom; text-align: center; border-bottom: 6px solid #000; padding: 6px 0 0; }
+  .hn td.pick { background: #ddd; }
+  .disc { margin: 2px auto 0; background: #000; color: #fff; font-weight: bold; text-align: center; border-radius: 4px; -webkit-border-radius: 4px; }
+  .disc.sel { background: #fff; color: #000; border: 3px solid #000; }
+  .peg { margin: 0 auto; width: 8px; background: #000; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Th&aacute;p H&agrave; N&#7897;i</span></div>
+<div class="controls" id="sizes">
+  Discs: <button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button><button data-v="6">6</button><button data-v="7">7</button><button data-v="8">8</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="undoBtn">Undo</button><button id="resetBtn">Restart</button></div>
+<p class="help">Tower of Hanoi. Move the whole tower from the left peg to the right peg. Tap a peg to pick up its top
+disc, then tap another peg to put it there. You may never put a bigger disc on a smaller one.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-thaphanoi';
+  var saved = KG.load(KEY) || {};
+  var n = saved.n || '4', best = saved.best || {}, g = null, pick = -1;
+
+  function reset() {
+    var k = parseInt(n, 10), a = [];
+    for (var i = k; i >= 1; i--) a.push(i);
+    g = { pegs: [a, [], []], moves: 0, hist: [] };
+    pick = -1;
+  }
+  reset();
+
+  function render() {
+    var k = parseInt(n, 10), min = Math.pow(2, k) - 1, done = g.pegs[2].length === k;
+    if (done && (!best[n] || g.moves < best[n])) best[n] = g.moves;
+    KG.text(KG.$('status'), done ? 'Done in ' + g.moves + ' moves' + (g.moves === min ? ' — perfect!' : ' (the fewest possible is ' + min + ').')
+      : 'Moves: ' + g.moves + ' · fewest possible: ' + min + (pick >= 0 ? ' — now tap where to put it' : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, 640), colW = Math.floor((W - 24) / 3), dh = Math.max(22, Math.min(36, Math.floor(((window.innerHeight || 800) - 330) / (k + 1))));
+    var h = ['<table class="hn"><tr>'];
+    for (var p = 0; p < 3; p++) {
+      var st = g.pegs[p], inner = '<div class="peg" style="height:' + Math.max(10, (k - st.length) * dh + 10) + 'px"></div>';
+      for (var i = st.length - 1; i >= 0; i--) {
+        var w = Math.round(colW * (0.25 + 0.75 * st[i] / k));
+        inner += '<div class="disc' + (p === pick && i === st.length - 1 ? ' sel' : '') + '" style="width:' + w + 'px;height:' + (dh - 4) + 'px;line-height:' + (dh - 4) + 'px">' + st[i] + '</div>';
+      }
+      h.push('<td data-p="' + p + '" class="' + (p === pick ? 'pick' : '') + '" style="width:' + colW + 'px">' + inner + '</td>');
+    }
+    h.push('</tr></table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { n: n, best: best });
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-p');
+    if (v === null || g.pegs[2].length === parseInt(n, 10)) return;
+    var p = parseInt(v, 10);
+    if (pick < 0) { if (g.pegs[p].length) pick = p; }
+    else if (p === pick) pick = -1;
+    else {
+      var from = g.pegs[pick], to = g.pegs[p], d = from[from.length - 1];
+      if (!to.length || to[to.length - 1] > d) {
+        g.hist.push([pick, p]);
+        to.push(from.pop()); g.moves++;
+      }
+      pick = -1;
+    }
+    render();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (!g.hist.length) return;
+    var m = g.hist.pop();
+    g.pegs[m[0]].push(g.pegs[m[1]].pop()); g.moves--; pick = -1; render();
+  };
+  KG.$('resetBtn').onclick = function () { reset(); render(); };
+  KG.buttonGroup('sizes', n, function (v) { n = v; reset(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

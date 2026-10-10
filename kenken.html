@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle KenKen</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .pzt { margin: 0 auto; }
+  .pzt td { font-family: Georgia, serif; }
+  .pzt .pg { font-weight: bold; }
+  .pzt .pu { font-style: italic; }
+  .npad { text-align: center; margin: 6px 0; }
+  .npad button { width: 48px; height: 48px; font-size: 22px; font-weight: bold; margin: 2px; padding: 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">KenKen</span></div>
+<div class="controls" id="levels"><button data-v="4">4&times;4</button><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="npad" id="pad"></div>
+<div class="controls">
+  <button id="checkBtn">Check</button><button id="hintBtn">Hint</button><button id="undoBtn">Undo</button><button id="newBtn">New</button>
+</div>
+<p class="help">Fill the grid so every row and column contains each number once (1&ndash;4 on a 4&times;4 grid, and so on). The numbers in each thick-outlined <b>cage</b> must make the target in its corner using the operation shown: + add, &minus; subtract, &times; multiply, &divide; divide (for &minus; and &divide;, take the bigger number first). Tap a square, then a number (&times; clears it). <b>Check</b> shades wrong numbers. Every puzzle has
+exactly one solution. Your puzzle is saved automatically.</p>
+<script src="common.js"></script>
+<script src="puzzle.js"></script>
+<script>
+(function () {
+  function make(level) {
+    var n = parseInt(level, 10), sol = PZ.latin(n), cg = PZ.cages(n, n >= 6 ? 4 : 3, null), ops = [], tg = [], i, k;
+    for (i = 0; i < cg.cages.length; i++) {
+      var c = cg.cages[i], vals = [];
+      for (k = 0; k < c.length; k++) vals.push(sol[c[k]]);
+      var op, t;
+      if (c.length === 1) { op = ''; t = vals[0]; }
+      else if (c.length === 2) {
+        var hi = Math.max(vals[0], vals[1]), lo = Math.min(vals[0], vals[1]), rr = Math.random();
+        if (hi % lo === 0 && rr < 0.4) { op = '/'; t = hi / lo; }
+        else if (rr < 0.7) { op = '-'; t = hi - lo; }
+        else if (rr < 0.85) { op = '+'; t = hi + lo; }
+        else { op = 'x'; t = hi * lo; }
+      } else if (Math.random() < 0.5) { op = '+'; t = 0; for (k = 0; k < vals.length; k++) t += vals[k]; }
+      else { op = 'x'; t = 1; for (k = 0; k < vals.length; k++) t *= vals[k]; }
+      ops.push(op); tg.push(t);
+    }
+    function ok(g, p) {
+      var ci = cg.owner[p], c = cg.cages[ci], op = ops[ci], t = tg[ci], vals = [], empty = 0;
+      for (var j = 0; j < c.length; j++) { if (g[c[j]]) vals.push(g[c[j]]); else empty++; }
+      if (op === '' ) return vals[0] === t;
+      if (op === '+') { var s = 0; for (j = 0; j < vals.length; j++) s += vals[j]; return empty ? s + empty <= t : s === t; }
+      if (op === 'x') { var m = 1; for (j = 0; j < vals.length; j++) m *= vals[j]; return empty ? t % m === 0 : m === t; }
+      if (empty) return true;
+      var a = Math.max(vals[0], vals[1]), b = Math.min(vals[0], vals[1]);
+      return op === '-' ? a - b === t : a === b * t;
+    }
+    var giv = [];
+    for (i = 0; i < n * n; i++) giv.push(0);
+    for (i = 0; i < cg.cages.length; i++) if (cg.cages[i].length === 1) giv[cg.cages[i][0]] = sol[cg.cages[i][0]];
+    PZ.makeUnique(n, sol, giv, 0, ok, 60000);
+    var label = [], SYM = { '': '', '+': '+', '-': '−', 'x': '×', '/': '÷' };
+    for (i = 0; i < n * n; i++) label.push('');
+    for (i = 0; i < cg.cages.length; i++) { var first = 99; for (k = 0; k < cg.cages[i].length; k++) first = Math.min(first, cg.cages[i][k]); label[first] = tg[i] + SYM[ops[i]]; }
+    return { n: n, sol: sol, giv: giv, owner: cg.owner, label: label };
+  }
+  PZ.game({
+    key: 'kg-kenken', defaultLevel: '4', make: make,
+    cellStyle: function (pz, i) { return PZ.cageBorders(pz.n, pz.owner, i); },
+    deco: function (pz, i, S) {
+      return pz.label[i] ? '<div style="position:absolute;left:3px;top:2px;font-size:' + Math.max(10, Math.round(S * 0.22)) + 'px;line-height:1;font-style:normal;font-weight:bold">' + pz.label[i] + '</div>' : '';
+    }
+  });
+})();
+</script>
+</body>
+</html>

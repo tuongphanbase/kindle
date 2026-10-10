@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Tinh Nham</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .q { text-align: center; font-size: 44px; font-weight: bold; margin: 14px 0 6px; font-family: Georgia, serif; }
+  .ans { text-align: center; font-size: 36px; min-height: 48px; border-bottom: 3px solid #000; width: 200px; margin: 0 auto 10px; font-family: Georgia, serif; }
+  .keys { text-align: center; }
+  .keys button { width: 70px; height: 56px; font-size: 26px; font-weight: bold; margin: 3px; padding: 0; }
+  .fb { text-align: center; font-size: 18px; min-height: 26px; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">T&iacute;nh Nh&#7849;m</span></div>
+<div class="controls" id="ops">
+  <button data-v="+">+</button><button data-v="-">&minus;</button><button data-v="x">&times;</button><button data-v="/">&divide;</button><button data-v="mix">Mixed</button>
+</div>
+<div class="controls" id="levels">
+  <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button>
+</div>
+<div id="status" class="status" style="text-align:center"></div>
+<div class="q" id="q"></div>
+<div class="ans" id="ans"></div>
+<div class="fb" id="fb"></div>
+<div class="keys" id="keys">
+  <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><br>
+  <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><br>
+  <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><br>
+  <button data-k="del">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
+</div>
+<p class="help">Mental maths practice. Answer 10 questions per round using the number pad, then press OK. Choose the
+kind of sum and the level at the top. Your best score for each kind is saved.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-tinhnham', ROUND = 10;
+  var saved = KG.load(KEY) || {};
+  var op = saved.op || '+', level = saved.level || '1', best = saved.best || {}, g = null;
+  var SYM = { '+': '+', '-': '−', 'x': '×', '/': '÷' };
+
+  function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+  function question() {
+    var o = op === 'mix' ? ['+', '-', 'x', '/'][rnd(0, 3)] : op, L = parseInt(level, 10), a, b;
+    var lim = L === 1 ? 10 : (L === 2 ? 50 : 200), tl = L === 1 ? 5 : (L === 2 ? 10 : 15);
+    if (o === '+') { a = rnd(1, lim); b = rnd(1, lim); return [a + ' + ' + b, a + b]; }
+    if (o === '-') { a = rnd(1, lim); b = rnd(0, a); return [a + ' ' + SYM['-'] + ' ' + b, a - b]; }
+    a = rnd(L === 1 ? 1 : 2, tl); b = rnd(L === 1 ? 1 : 2, tl);
+    if (o === 'x') return [a + ' ' + SYM.x + ' ' + b, a * b];
+    return [(a * b) + ' ' + SYM['/'] + ' ' + a, b];
+  }
+  function start() { g = { n: 0, right: 0, q: question(), typed: '', start: new Date().getTime(), secs: 0, fb: '' }; }
+  start();
+  function key() { return op + level; }
+  function render() {
+    var over = g.n >= ROUND;
+    KG.text(KG.$('status'), over ? 'Score: ' + g.right + ' / ' + ROUND + ' in ' + g.secs + ' s' + (best[key()] ? ' · best ' + best[key()] + ' / ' + ROUND : '') + ' — press OK to play again'
+      : 'Question ' + (g.n + 1) + ' of ' + ROUND + ' · correct: ' + g.right);
+    KG.text(KG.$('q'), over ? (g.right === ROUND ? 'Perfect!' : 'Well done!') : g.q[0] + ' =');
+    KG.text(KG.$('ans'), over ? '' : g.typed);
+    KG.text(KG.$('fb'), g.fb);
+    KG.save(KEY, { op: op, level: level, best: best });
+  }
+  KG.$('keys').onclick = function (e) {
+    var k = KG.attrFromEvent(e, KG.$('keys'), 'data-k');
+    if (k === null) return;
+    if (g.n >= ROUND) { if (k === 'ok') { start(); render(); } return; }
+    if (k === 'del') g.typed = g.typed.slice(0, -1);
+    else if (k === 'ok') {
+      if (!g.typed) return;
+      var ok = parseInt(g.typed, 10) === g.q[1];
+      if (ok) g.right++;
+      g.fb = ok ? 'Correct!' : 'Not quite: ' + g.q[0] + ' = ' + g.q[1];
+      g.n++; g.typed = ''; g.q = question();
+      if (g.n >= ROUND) {
+        g.secs = Math.round((new Date().getTime() - g.start) / 1000);
+        if (!best[key()] || g.right > best[key()]) best[key()] = g.right;
+      }
+    } else if (g.typed.length < 5) g.typed += k;
+    render();
+  };
+  KG.buttonGroup('ops', op, function (v) { op = v; start(); render(); });
+  KG.buttonGroup('levels', level, function (v) { level = v; start(); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

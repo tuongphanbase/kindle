@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Bau Cua</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .bc { border-collapse: separate; border-spacing: 6px; margin: 0 auto; }
+  .bc td { border: 3px solid #000; border-radius: 8px; -webkit-border-radius: 8px; text-align: center; vertical-align: middle; width: 160px; height: 90px; }
+  .bc .nm { font-size: 24px; font-weight: bold; }
+  .bc .bet { font-size: 16px; margin-top: 4px; }
+  .bc .hit { background: #000; color: #fff; }
+  .dice { text-align: center; margin: 8px 0; }
+  .die { display: inline-block; width: 100px; height: 60px; line-height: 60px; border: 3px solid #000; border-radius: 8px; -webkit-border-radius: 8px; margin: 3px; font-size: 20px; font-weight: bold; background: #fff; }
+  .money { text-align: center; font-size: 20px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">B&#7847;u Cua T&ocirc;m C&aacute;</span></div>
+<div class="money" id="money"></div>
+<div class="controls" id="chips">
+  Chip: <button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="50">50</button>
+</div>
+<div id="board"></div>
+<div class="dice" id="dice"></div>
+<div id="status" class="status" style="text-align:center"></div>
+<div class="controls">
+  <button id="rollBtn">L&#7855;c (Roll)</button><button id="clearBtn">Clear Bets</button>
+</div>
+<p class="help">Tap a picture to bet one chip on it (tap again to add more). Then press <b>L&#7855;c</b> to roll three dice.
+For each die showing your picture you win your bet once more, and you get your bet back; if your picture doesn't
+appear you lose that bet. If you run out of money you get 100 more.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-baucua', NAMES = ['Bầu', 'Cua', 'Tôm', 'Cá', 'Gà', 'Nai'];
+  var EN = ['gourd', 'crab', 'shrimp', 'fish', 'rooster', 'deer'];
+  var saved = KG.load(KEY) || {};
+  var money = saved.money === undefined ? 100 : saved.money, chip = saved.chip || '10', bets = [0, 0, 0, 0, 0, 0], dice = null, msg = 'Place your bets!';
+
+  function placed() { var t = 0; for (var i = 0; i < 6; i++) t += bets[i]; return t; }
+  function render() {
+    KG.text(KG.$('money'), 'Money: ' + money + (placed() ? ' · on the table: ' + placed() : ''));
+    var h = ['<table class="bc">'];
+    for (var i = 0; i < 6; i++) {
+      if (i % 3 === 0) h.push('<tr>');
+      var hit = 0;
+      if (dice) for (var k = 0; k < 3; k++) if (dice[k] === i) hit++;
+      h.push('<td data-i="' + i + '" class="' + (hit ? 'hit' : '') + '"><div class="nm">' + NAMES[i] + '</div><div class="bet">' +
+        (bets[i] ? 'Bet: ' + bets[i] : '(' + EN[i] + ')') + (hit ? ' ×' + hit : '') + '</div></td>');
+      if (i % 3 === 2) h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    var d = [];
+    if (dice) for (var j = 0; j < 3; j++) d.push('<span class="die">' + NAMES[dice[j]] + '</span>');
+    KG.$('dice').innerHTML = d.join('');
+    KG.text(KG.$('status'), msg);
+    KG.save(KEY, { money: money, chip: chip });
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-i');
+    if (v === null) return;
+    var c = parseInt(chip, 10);
+    if (dice) { dice = null; }
+    if (placed() + c > money) { msg = 'Not enough money for that bet.'; render(); return; }
+    bets[parseInt(v, 10)] += c;
+    msg = 'Press Lắc to roll.';
+    render();
+  };
+  KG.$('rollBtn').onclick = function () {
+    if (!placed()) { msg = 'Tap a picture to bet first.'; render(); return; }
+    dice = [Math.floor(Math.random() * 6), Math.floor(Math.random() * 6), Math.floor(Math.random() * 6)];
+    var change = 0;
+    for (var i = 0; i < 6; i++) {
+      if (!bets[i]) continue;
+      var n = 0;
+      for (var k = 0; k < 3; k++) if (dice[k] === i) n++;
+      change += n ? bets[i] * n : -bets[i];
+    }
+    money += change;
+    msg = change > 0 ? 'You win ' + change + '!' : (change < 0 ? 'You lose ' + (-change) + '.' : 'You broke even.');
+    if (money <= 0) { money = 100; msg += ' Out of money — here are 100 more.'; }
+    bets = [0, 0, 0, 0, 0, 0];
+    msg += ' Bet again!';
+    render();
+  };
+  KG.$('clearBtn').onclick = function () { bets = [0, 0, 0, 0, 0, 0]; msg = 'Bets cleared.'; render(); };
+  KG.buttonGroup('chips', chip, function (v) { chip = v; KG.save(KEY, { money: money, chip: chip }); });
+  render();
+})();
+</script>
+</body>
+</html>

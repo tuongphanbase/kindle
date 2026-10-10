@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Star Battle</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .sb { border-collapse: collapse; margin: 0 auto; }
+  .sb td { padding: 0; }
+  .sb .in { position: relative; }
+  .sb .star { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .sb .mk { position: absolute; background: #999; border-radius: 50%; -webkit-border-radius: 50%; }
+  .sb .clash { background: #bbb; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Star Battle</span></div>
+<div class="controls" id="levels"><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button><button data-v="8">8&times;8</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="undoBtn">Undo</button><button id="clearBtn">Clear</button><button id="newBtn">New Puzzle</button></div>
+<p class="help">Place one star (black disc) in every row, every column and every thick-outlined region. Stars may not
+touch each other, not even diagonally. Tap a square to cycle: empty &rarr; small grey dot (your note: no star here)
+&rarr; star &rarr; empty. Squares where stars clash are shaded.</p>
+<script src="common.js"></script>
+<script src="puzzle.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-starbattle';
+  var saved = KG.load(KEY) || {};
+  var level = saved.level || '5', g = saved.g || null, hist = [];
+
+  function stars(n) {
+    var p = [];
+    function rec(r) {
+      if (r === n) return true;
+      var cs = KG.shuffle(function () { var a = []; for (var i = 0; i < n; i++) a.push(i); return a; }());
+      for (var k = 0; k < n; k++) {
+        var c = cs[k];
+        if (p.indexOf(c) >= 0 || (r && Math.abs(p[r - 1] - c) < 2)) continue;
+        p.push(c);
+        if (rec(r + 1)) return true;
+        p.pop();
+      }
+      return false;
+    }
+    rec(0);
+    return p;
+  }
+  function regions(n, p) {
+    var owner = [], front = [], i;
+    for (i = 0; i < n * n; i++) owner.push(-1);
+    for (i = 0; i < n; i++) { owner[i * n + p[i]] = i; front.push(i * n + p[i]); }
+    var left = n * n - n;
+    while (left) {
+      var cell = front[Math.floor(Math.random() * front.length)], r = Math.floor(cell / n), c = cell % n, nb = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]], free = [];
+      for (var k = 0; k < 4; k++) if (nb[k][0] >= 0 && nb[k][0] < n && nb[k][1] >= 0 && nb[k][1] < n && owner[nb[k][0] * n + nb[k][1]] < 0) free.push(nb[k][0] * n + nb[k][1]);
+      if (!free.length) { front.splice(front.indexOf(cell), 1); continue; }
+      var q = free[Math.floor(Math.random() * free.length)];
+      owner[q] = owner[cell]; front.push(q); left--;
+    }
+    return owner;
+  }
+  function countSolutions(n, owner) {
+    var col = [], reg = [], cnt = 0, prev = -9;
+    function rec(r, pc) {
+      if (r === n) { cnt++; return cnt >= 2; }
+      for (var c = 0; c < n; c++) {
+        var o = owner[r * n + c];
+        if (col[c] || reg[o] || Math.abs(c - pc) < 2) continue;
+        col[c] = 1; reg[o] = 1;
+        if (rec(r + 1, c)) return true;
+        col[c] = 0; reg[o] = 0;
+      }
+      return false;
+    }
+    rec(0, prev);
+    return cnt;
+  }
+  function newGame() {
+    var n = parseInt(level, 10), p, owner;
+    for (var tries = 0; tries < 60; tries++) {
+      p = stars(n); owner = regions(n, p);
+      if (countSolutions(n, owner) === 1) break;
+    }
+    var cells = [];
+    for (var i = 0; i < n * n; i++) cells.push(0);
+    g = { n: n, owner: owner, cells: cells, done: false };
+    hist = [];
+  }
+
+  function clashes() {
+    var n = g.n, bad = {}, i, j, list = [];
+    for (i = 0; i < n * n; i++) if (g.cells[i] === 2) list.push(i);
+    for (i = 0; i < list.length; i++) for (j = i + 1; j < list.length; j++) {
+      var a = list[i], b = list[j], ar = Math.floor(a / n), ac = a % n, br = Math.floor(b / n), bc = b % n;
+      if (ar === br || ac === bc || g.owner[a] === g.owner[b] || (Math.abs(ar - br) <= 1 && Math.abs(ac - bc) <= 1)) { bad[a] = 1; bad[b] = 1; }
+    }
+    return { bad: bad, count: list.length };
+  }
+  function render() {
+    var n = g.n, cl = clashes(), nb = 0, k;
+    for (k in cl.bad) if (cl.bad.hasOwnProperty(k)) nb++;
+    if (cl.count === n && !nb) g.done = true;
+    KG.text(KG.$('status'), g.done ? 'Solved — well done!' : 'Stars placed: ' + cl.count + ' of ' + n + (nb ? ' — some stars clash' : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 600), S = Math.floor(W / n) - 2, h = ['<table class="sb">'];
+    for (var i = 0; i < n * n; i++) {
+      if (i % n === 0) h.push('<tr>');
+      var v = g.cells[i], d = v === 2 ? Math.round(S * 0.6) : Math.round(S * 0.18), o = Math.round((S - d) / 2);
+      h.push('<td data-sq="' + i + '" class="' + (cl.bad[i] ? 'clash' : '') + '" style="' + PZ.cageBorders(n, g.owner, i) + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">' +
+        (v ? '<div class="' + (v === 2 ? 'star' : 'mk') + '" style="left:' + o + 'px;top:' + o + 'px;width:' + d + 'px;height:' + d + 'px"></div>' : '') + '</div></td>');
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { level: level, g: g });
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || g.done) return;
+    var p = parseInt(v, 10);
+    hist.push([p, g.cells[p]]);
+    g.cells[p] = (g.cells[p] + 1) % 3;
+    render();
+  };
+  KG.$('undoBtn').onclick = function () { if (hist.length && !g.done) { var h = hist.pop(); g.cells[h[0]] = h[1]; render(); } };
+  KG.$('clearBtn').onclick = function () { if (g.done) return; for (var i = 0; i < g.cells.length; i++) g.cells[i] = 0; hist = []; render(); };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('levels', level, function (v) { level = v; newGame(); render(); });
+  window.onresize = render;
+  if (!g || String(g.n) !== level) newGame();
+  render();
+})();
+</script>
+</body>
+</html>

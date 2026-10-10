@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Lat Hinh</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .mem { border-collapse: separate; border-spacing: 5px; margin: 0 auto; }
+  .mem td { border: 2px solid #000; border-radius: 6px; -webkit-border-radius: 6px; text-align: center; vertical-align: middle; font-weight: bold; font-family: Georgia, serif; }
+  .mem .down { background: #888; }
+  .mem .up { background: #fff; }
+  .mem .gone { background: #fff; border-color: #ccc; color: #bbb; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">L&#7853;t H&igrave;nh</span></div>
+<div class="controls" id="sizes">
+  <button data-v="4x4">4&times;4</button><button data-v="4x5">4&times;5</button><button data-v="6x6">6&times;6</button>
+</div>
+<div class="controls" id="modes">
+  <button data-v="1">1 Player</button><button data-v="2">2 Players</button>
+</div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="newBtn">New Game</button></div>
+<p class="help">Memory. Tap two cards to turn them over. If they match they stay face up; if not, they turn back when
+you tap the next card. Find every pair in as few turns as you can. With 2 players, a match lets you go again and the
+player with more pairs wins.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-lathinh', SYMS = 'ABCDEFGHJKLMNPRSTUVWXYZ2345';
+  var boardEl = KG.$('board'), statusEl = KG.$('status');
+  var saved = KG.load(KEY) || {};
+  var size = saved.size || '4x4', mode = saved.mode || '1', best = saved.best || {}, g = null;
+
+  function newGame() {
+    var p = size.split('x'), R = parseInt(p[0], 10), C = parseInt(p[1], 10), cards = [], i;
+    for (i = 0; i < R * C; i++) cards.push(SYMS.charAt(Math.floor(i / 2)));
+    KG.shuffle(cards);
+    g = { R: R, C: C, cards: cards, state: [], open: [], turns: 0, player: 1, score: [0, 0, 0], left: R * C / 2 };
+    for (i = 0; i < R * C; i++) g.state.push(0); // 0 down, 1 up (temporary), 2 matched
+  }
+  newGame();
+
+  function render() {
+    var txt;
+    if (!g.left) {
+      if (mode === '2') txt = g.score[1] === g.score[2] ? 'Draw! ' : 'Player ' + (g.score[1] > g.score[2] ? 1 : 2) + ' wins! ';
+      else txt = 'All pairs found in ' + g.turns + ' turns!' + (best[size] ? ' Best: ' + best[size] + '.' : '');
+    } else txt = mode === '2' ? 'Player ' + g.player + '’s turn' : 'Turns: ' + g.turns + (best[size] ? '  (best ' + best[size] + ')' : '');
+    if (mode === '2') txt += '  ·  P1: ' + g.score[1] + ' pairs, P2: ' + g.score[2];
+    KG.text(statusEl, txt);
+    var W = Math.min((window.innerWidth || 600) - 24, 600), H = (window.innerHeight || 800) - 290;
+    var S = Math.floor(Math.min((W - 5 * (g.C + 1)) / g.C, (H - 5 * (g.R + 1)) / g.R)) - 4, h = ['<table class="mem">'];
+    for (var i = 0; i < g.cards.length; i++) {
+      if (i % g.C === 0) h.push('<tr>');
+      var st = g.state[i];
+      h.push('<td data-sq="' + i + '" class="' + (st === 0 ? 'down' : (st === 1 ? 'up' : 'gone')) + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.5) + 'px">' + (st ? g.cards[i] : '') + '</td>');
+      if (i % g.C === g.C - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    boardEl.innerHTML = h.join('');
+    KG.save(KEY, { size: size, mode: mode, best: best });
+  }
+  boardEl.onclick = function (e) {
+    var v = KG.attrFromEvent(e, boardEl, 'data-sq');
+    if (v === null || !g.left) return;
+    var p = parseInt(v, 10);
+    if (g.state[p] !== 0) return;
+    if (g.open.length === 2) { // hide the last non-matching pair first
+      g.state[g.open[0]] = 0; g.state[g.open[1]] = 0; g.open = [];
+    }
+    g.state[p] = 1; g.open.push(p);
+    if (g.open.length === 2) {
+      g.turns++;
+      var a = g.open[0], b = g.open[1];
+      if (g.cards[a] === g.cards[b]) {
+        g.state[a] = 2; g.state[b] = 2; g.open = []; g.left--; g.score[g.player]++;
+        if (!g.left && mode === '1' && (!best[size] || g.turns < best[size])) best[size] = g.turns;
+      } else if (mode === '2') g.player = 3 - g.player;
+    }
+    render();
+  };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('sizes', size, function (v) { size = v; newGame(); render(); });
+  KG.buttonGroup('modes', mode, function (v) { mode = v; newGame(); render(); });
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

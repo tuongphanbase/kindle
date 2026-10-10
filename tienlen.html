@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Tien Len</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .opp { text-align: center; font-size: 16px; line-height: 24px; }
+  .opp .turn { font-weight: bold; text-decoration: underline; }
+  .tbl { text-align: center; min-height: 92px; margin: 8px 0; border-top: 1px solid #999; border-bottom: 1px solid #999; padding: 6px 0; }
+  .tbl .who { font-size: 15px; margin-bottom: 4px; }
+  .cd { display: inline-block; width: 44px; height: 62px; border: 2px solid #000; border-radius: 5px; -webkit-border-radius: 5px; margin: 2px;
+    background: #fff; font-family: Georgia, serif; font-weight: bold; font-size: 19px; line-height: 58px; text-align: center; vertical-align: top; }
+  .cd.red { background: #ddd; }
+  .cd.sel { background: #000; color: #fff; }
+  .hand { text-align: center; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Ti&#7871;n L&ecirc;n</span></div>
+<div class="opp" id="opp"></div>
+<div class="tbl" id="table"></div>
+<div id="status" class="status" style="text-align:center"></div>
+<div class="hand" id="hand"></div>
+<div class="controls">
+  <button id="playBtn">&#272;&aacute;nh (Play)</button><button id="passBtn">B&#7887; (Pass)</button><button id="clearBtn">Clear</button><button id="newBtn">V&aacute;n m&#7899;i</button>
+</div>
+<p class="help">Southern Vietnamese Ti&#7871;n L&ecirc;n against three computer players. Cards rank 3 (lowest) &hellip; K, A, 2
+(highest); suits rank &spades; &lt; &clubs; &lt; &#9826; &lt; &#9825;. Tap cards to select them, then press <b>&#272;&aacute;nh</b>.
+You can play a single, a pair, three or four of a kind, a run of 3+ in a row (no 2s), or 3+ pairs in a row
+(&#273;&ocirc;i th&ocirc;ng). To follow, play the same kind and size but higher, or press <b>B&#7887;</b> &mdash; once you pass
+you are out until the next round. Chopping: four of a kind or 3 &#273;&ocirc;i th&ocirc;ng beat a single 2; four of a kind
+or 4 &#273;&ocirc;i th&ocirc;ng beat a pair of 2s. The holder of 3&spades; starts the first game; first to play every card wins.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-tienlen', RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'], SUITS = ['&#9824;', '&#9827;', '&#9826;', '&#9825;'];
+  var PN = ['You', 'West', 'North', 'East'];
+  var saved = KG.load(KEY) || {};
+  var g = saved.g || null, lastWinner = saved.lastWinner === undefined ? -1 : saved.lastWinner, sel = {}, busy = false;
+
+  function rk(c) { return Math.floor(c / 4); }
+  function label(c) { return RANKS[rk(c)] + SUITS[c % 4]; }
+  function sortNum(a, b) { return a - b; }
+  // Returns { type, n, top, pairs } or null. Types: single, pair, triple, quad, run, pairs (doi thong).
+  function combo(cards) {
+    var c = cards.slice().sort(sortNum), n = c.length, i;
+    if (!n) return null;
+    var top = c[n - 1], same = true;
+    for (i = 1; i < n; i++) if (rk(c[i]) !== rk(c[0])) same = false;
+    if (same) return n === 1 ? { type: 'single', n: 1, top: top } : (n === 2 ? { type: 'pair', n: 2, top: top } : (n === 3 ? { type: 'triple', n: 3, top: top } : { type: 'quad', n: 4, top: top }));
+    if (n >= 3 && rk(top) < 12) {
+      var run = true;
+      for (i = 1; i < n; i++) if (rk(c[i]) !== rk(c[i - 1]) + 1) run = false;
+      if (run) return { type: 'run', n: n, top: top };
+    }
+    if (n >= 6 && n % 2 === 0 && rk(top) < 12) {
+      var ok = true;
+      for (i = 0; i < n; i += 2) {
+        if (rk(c[i]) !== rk(c[i + 1])) ok = false;
+        if (i && rk(c[i]) !== rk(c[i - 2]) + 1) ok = false;
+      }
+      if (ok) return { type: 'pairs', n: n, top: top };
+    }
+    return null;
+  }
+  function beats(cur, prev) {
+    if (!cur) return false;
+    if (!prev) return true;
+    if (cur.type === prev.type && cur.n === prev.n) return cur.top > prev.top;
+    var two = rk(prev.top) === 12;
+    if (prev.type === 'single' && two) return cur.type === 'quad' || (cur.type === 'pairs' && cur.n >= 6);
+    if (prev.type === 'pair' && two) return cur.type === 'quad' || (cur.type === 'pairs' && cur.n >= 8);
+    if (prev.type === 'quad') return cur.type === 'pairs' && cur.n >= 8;
+    if (prev.type === 'pairs' && prev.n === 6) return cur.type === 'quad' || (cur.type === 'pairs' && cur.n >= 8);
+    return false;
+  }
+  // Every playable group in a hand (used by the computer players).
+  function allCombos(hand) {
+    var h = hand.slice().sort(sortNum), out = [], byRank = {}, i, j, r;
+    for (i = 0; i < h.length; i++) (byRank[rk(h[i])] = byRank[rk(h[i])] || []).push(h[i]);
+    for (i = 0; i < h.length; i++) out.push([h[i]]);
+    for (r = 0; r < 13; r++) {
+      var a = byRank[r];
+      if (!a) continue;
+      for (i = 0; i < a.length; i++) for (j = i + 1; j < a.length; j++) out.push([a[i], a[j]]);
+      if (a.length >= 3) out.push(a.slice(0, 3)), out.push(a.slice(a.length - 3));
+      if (a.length === 4) out.push(a.slice());
+    }
+    for (var s = 0; s < 12; s++) {
+      var run = [], prs = [];
+      for (r = s; r < 12 && byRank[r]; r++) {
+        run.push(byRank[r][0]);
+        if (run.length >= 3) { out.push(run.slice()); var hi = run.slice(); hi[hi.length - 1] = byRank[r][byRank[r].length - 1]; out.push(hi); }
+      }
+      for (r = s; r < 12 && byRank[r] && byRank[r].length >= 2; r++) {
+        prs.push(byRank[r][0], byRank[r][1]);
+        if (prs.length >= 6) out.push(prs.slice());
+      }
+    }
+    return out;
+  }
+  function cpuChoose(p) {
+    var hand = g.hands[p], prev = g.table ? g.table.combo : null, all = allCombos(hand), cands = [], i;
+    var danger = false;
+    for (i = 0; i < 4; i++) if (i !== p && g.hands[i].length <= 3) danger = true;
+    var full = combo(hand);
+    if (full && beats(full, prev)) return hand.slice();
+    for (i = 0; i < all.length; i++) { var c = combo(all[i]); if (c && beats(c, prev)) cands.push({ cards: all[i], c: c }); }
+    if (!cands.length) return null;
+    if (!prev) {
+      var low = hand.slice().sort(sortNum)[0], bestL = null, score = -1;
+      for (i = 0; i < cands.length; i++) {
+        if (cands[i].cards.indexOf(low) < 0) continue;
+        var t = cands[i].c.type, sc = cands[i].cards.length * 10 + (t === 'run' || t === 'pairs' ? 5 : 0) - (t === 'quad' ? 50 : 0);
+        if (sc > score) { score = sc; bestL = cands[i]; }
+      }
+      return (bestL || cands[0]).cards;
+    }
+    var pick = null;
+    for (i = 0; i < cands.length; i++) {
+      var cc = cands[i], costly = rk(cc.c.top) === 12 || cc.c.type === 'quad' || (cc.c.type === 'pairs' && prev.type !== 'pairs');
+      if (costly && !danger && hand.length > 5) continue;
+      if (!pick || cc.c.top < pick.c.top) pick = cc;
+    }
+    return pick ? pick.cards : null;
+  }
+
+  function deal() {
+    var deck = [], i;
+    for (i = 0; i < 52; i++) deck.push(i);
+    KG.shuffle(deck);
+    var hands = [[], [], [], []];
+    for (i = 0; i < 52; i++) hands[i % 4].push(deck[i]);
+    for (i = 0; i < 4; i++) hands[i].sort(sortNum);
+    var first = lastWinner;
+    if (first < 0) for (i = 0; i < 4; i++) if (hands[i].indexOf(0) >= 0) first = i;
+    g = { hands: hands, turn: first, table: null, passed: [false, false, false, false], leader: first, winner: -1, msg: PN[first] + (first ? ' leads.' : ' lead — play anything.') };
+    sel = {};
+  }
+  if (!g) deal();
+
+  function newRound(p) {
+    g.table = null; g.passed = [false, false, false, false]; g.turn = p; g.leader = p;
+    g.msg += ' ' + PN[p] + (p ? ' starts a new round.' : ' start a new round — play anything.');
+  }
+  function advance() {
+    var p = g.turn;
+    for (var k = 1; k <= 4; k++) {
+      var q = (p + k) % 4;
+      if (g.table && q === g.table.by) { newRound(q); return; }
+      if (!g.passed[q]) { g.turn = q; return; }
+    }
+  }
+  function playCards(p, cards) {
+    var c = combo(cards);
+    for (var i = 0; i < cards.length; i++) g.hands[p].splice(g.hands[p].indexOf(cards[i]), 1);
+    g.table = { cards: cards.slice().sort(sortNum), combo: c, by: p };
+    g.msg = PN[p] + (p ? ' plays ' : ' play ') + g.table.cards.map(label).join(' ').replace(/&#\d+;/g, function (m) { return { '&#9824;': '♠', '&#9827;': '♣', '&#9826;': '♢', '&#9825;': '♡' }[m]; }) + '.';
+    if (!g.hands[p].length) { g.winner = p; lastWinner = p; g.msg = p ? PN[p] + ' has played every card and wins!' : 'You played every card — you win!'; return; }
+    advance();
+  }
+  function passTurn(p) {
+    g.passed[p] = true;
+    g.msg = PN[p] + (p ? ' passes.' : ' pass.');
+    advance();
+  }
+  function step() {
+    render();
+    if (g.winner >= 0 || g.turn === 0 || busy) return;
+    busy = true;
+    setTimeout(function () {
+      busy = false;
+      if (g.winner >= 0 || g.turn === 0) return;
+      var p = g.turn, pick = cpuChoose(p);
+      if (pick) playCards(p, pick); else passTurn(p);
+      step();
+    }, 800);
+  }
+
+  function render() {
+    var o = [];
+    for (var p = 1; p < 4; p++) o.push('<div class="' + (g.turn === p && g.winner < 0 ? 'turn' : '') + '">' + PN[p] + ': ' + g.hands[p].length + ' cards' + (g.passed[p] ? ' · passed' : '') + '</div>');
+    KG.$('opp').innerHTML = o.join('');
+    var t = g.table;
+    KG.$('table').innerHTML = t ? '<div class="who">' + PN[t.by] + (t.by ? ' played:' : ' played:') + '</div>' + cardsHtml(t.cards, false) : '<div class="who">Table is empty — ' + PN[g.turn] + (g.turn ? ' leads' : ' lead') + '</div>';
+    KG.text(KG.$('status'), g.winner >= 0 ? g.msg + ' Press Ván mới to play again.' : g.msg + (g.turn === 0 ? ' Your turn.' : ''));
+    KG.$('hand').innerHTML = cardsHtml(g.hands[0], true);
+    KG.save(KEY, { g: g, lastWinner: lastWinner });
+  }
+  function cardsHtml(cards, mine) {
+    var h = [];
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i], red = c % 4 >= 2;
+      h.push('<span class="cd' + (red ? ' red' : '') + (mine && sel[c] ? ' sel' : '') + '"' + (mine ? ' data-c="' + c + '"' : '') + '>' + label(c) + '</span>');
+    }
+    return h.join('');
+  }
+  KG.$('hand').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('hand'), 'data-c');
+    if (v === null || g.winner >= 0) return;
+    var c = parseInt(v, 10);
+    if (sel[c]) delete sel[c]; else sel[c] = 1;
+    render();
+  };
+  KG.$('playBtn').onclick = function () {
+    if (busy || g.winner >= 0 || g.turn !== 0) return;
+    var cards = [];
+    for (var k in sel) if (sel.hasOwnProperty(k)) cards.push(parseInt(k, 10));
+    var c = combo(cards);
+    if (!c) { g.msg = 'Those cards are not a valid group.'; render(); return; }
+    if (!beats(c, g.table ? g.table.combo : null)) { g.msg = 'That does not beat what is on the table.'; render(); return; }
+    sel = {};
+    playCards(0, cards);
+    step();
+  };
+  KG.$('passBtn').onclick = function () {
+    if (busy || g.winner >= 0 || g.turn !== 0) return;
+    if (!g.table) { g.msg = 'You are leading — you have to play something.'; render(); return; }
+    sel = {};
+    passTurn(0);
+    step();
+  };
+  KG.$('clearBtn').onclick = function () { sel = {}; render(); };
+  KG.$('newBtn').onclick = function () {
+    if (g.winner < 0 && !window.confirm('Deal a new game?')) return;
+    deal(); step();
+  };
+  step();
+})();
+</script>
+</body>
+</html>

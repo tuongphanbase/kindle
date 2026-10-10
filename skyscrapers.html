@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Skyscrapers</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .pzt { margin: 0 auto; }
+  .pzt td { font-family: Georgia, serif; }
+  .pzt .pg { font-weight: bold; }
+  .pzt .pu { font-style: italic; }
+  .npad { text-align: center; margin: 6px 0; }
+  .npad button { width: 48px; height: 48px; font-size: 22px; font-weight: bold; margin: 2px; padding: 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Skyscrapers</span></div>
+<div class="controls" id="levels"><button data-v="4">4&times;4</button><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="npad" id="pad"></div>
+<div class="controls">
+  <button id="checkBtn">Check</button><button id="hintBtn">Hint</button><button id="undoBtn">Undo</button><button id="newBtn">New</button>
+</div>
+<p class="help">Each square holds a building whose height is its number; every row and column has one building of each height. A number outside the grid says how many buildings you can <b>see</b> from that side, looking along the row or column &mdash; taller buildings hide shorter ones behind them. Tap a square, then a number (&times; clears it). <b>Check</b> shades wrong numbers. Every puzzle has
+exactly one solution. Your puzzle is saved automatically.</p>
+<script src="common.js"></script>
+<script src="puzzle.js"></script>
+<script>
+(function () {
+  function seen(line) { var m = 0, k = 0; for (var i = 0; i < line.length; i++) if (line[i] > m) { m = line[i]; k++; } return k; }
+  // Checks the filled squares at the start of a line against its clue (0 = no clue).
+  function fitsClue(line, clue) {
+    if (!clue) return true;
+    var m = 0, k = 0, n = line.length;
+    for (var i = 0; i < n && line[i]; i++) {
+      if (line[i] > m) { m = line[i]; k++; }
+      if (k > clue) return false;
+      if (m === n) return k === clue;
+    }
+    return line.indexOf(0) >= 0 || k === clue;
+  }
+  function lines(g, n) {
+    var rows = [], cols = [], r, c;
+    for (r = 0; r < n; r++) { var a = []; for (c = 0; c < n; c++) a.push(g[r * n + c]); rows.push(a); }
+    for (c = 0; c < n; c++) { var b = []; for (r = 0; r < n; r++) b.push(g[r * n + c]); cols.push(b); }
+    return [rows, cols];
+  }
+  function clues(g, n) {
+    var L = lines(g, n), cl = { top: [], bottom: [], left: [], right: [] };
+    for (var k = 0; k < n; k++) {
+      cl.left.push(seen(L[0][k])); cl.right.push(seen(L[0][k].slice().reverse()));
+      cl.top.push(seen(L[1][k])); cl.bottom.push(seen(L[1][k].slice().reverse()));
+    }
+    return cl;
+  }
+  function make(level) {
+    var n = parseInt(level, 10), sol = PZ.latin(n), cl = clues(sol, n), i;
+    function okWith(c) {
+      return function (g, p) {
+        var r = Math.floor(p / n), col = p % n, row = [], cc = [], j;
+        for (j = 0; j < n; j++) { row.push(g[r * n + j]); cc.push(g[j * n + col]); }
+        return fitsClue(row, c.left[r]) && fitsClue(row.slice().reverse(), c.right[r]) &&
+          fitsClue(cc, c.top[col]) && fitsClue(cc.slice().reverse(), c.bottom[col]);
+      };
+    }
+    var giv = [];
+    for (i = 0; i < n * n; i++) giv.push(0);
+    PZ.makeUnique(n, sol, giv, 0, okWith(cl), 60000);
+    // Harder levels hide as many clues as possible while keeping one answer.
+    var drop = n === 4 ? 0.2 : (n === 5 ? 0.45 : 0.7), slots = [];
+    ['top', 'bottom', 'left', 'right'].forEach(function (s) { for (var k = 0; k < n; k++) slots.push([s, k]); });
+    KG.shuffle(slots);
+    var target = Math.round(slots.length * drop);
+    for (i = 0; i < slots.length && i < 14 && target > 0; i++) {
+      var s = slots[i], keep = cl[s[0]][s[1]];
+      cl[s[0]][s[1]] = 0;
+      if (PZ.solve(n, giv, 0, okWith(cl), 2, null, 60000) === 1) target--;
+      else cl[s[0]][s[1]] = keep;
+    }
+    return { n: n, sol: sol, giv: giv, cl: cl };
+  }
+  PZ.game({
+    key: 'kg-skyscrapers', defaultLevel: '4', make: make,
+    frame: function (pz) { return pz.cl; }
+  });
+})();
+</script>
+</body>
+</html>

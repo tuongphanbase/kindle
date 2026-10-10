@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Ca Ngua</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .lu { border-collapse: collapse; margin: 0 auto; }
+  .lu td { padding: 0; text-align: center; vertical-align: middle; font-weight: bold; font-family: Arial, Helvetica, sans-serif; }
+  .lu .tr { border: 1px solid #000; background: #fff; }
+  .lu .hc { border: 1px solid #000; background: #bbb; }
+  .lu .st { border: 3px solid #000; background: #fff; }
+  .lu .yd { background: #eee; }
+  .lu .ctr { background: #000; color: #fff; }
+  .lu .mv { outline: 4px solid #000; outline-offset: -4px; background: #888; }
+  .tok { display: inline-block; border-radius: 50%; -webkit-border-radius: 50%; text-align: center; }
+  .tA { background: #000; color: #fff; }
+  .tB { background: #fff; color: #000; border: 2px solid #000; }
+  .tC { background: #999; color: #000; border: 2px solid #000; }
+  .tD { background: #fff; color: #000; border: 3px double #000; }
+  .die { display: inline-block; width: 46px; height: 46px; line-height: 46px; border: 3px solid #000; border-radius: 8px; -webkit-border-radius: 8px; font-size: 28px; font-weight: bold; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; C&aacute; Ng&#7921;a</span></div>
+<div class="controls" id="modes"><button data-v="4">You + 3 computers</button><button data-v="2">You + 1 computer</button><button data-v="2p">2 Players</button><button data-v="4p">4 Players</button></div>
+<div class="controls" id="pieces">Pieces each: <button data-v="2">2</button><button data-v="4">4</button></div>
+<div id="status" class="status" style="text-align:center"></div>
+<div id="board"></div>
+<div class="controls"><span class="die" id="die">&ndash;</span> <button id="rollBtn">Roll</button><button id="newBtn">New Game</button></div>
+<p class="help">Ludo. Players A (black), B (white), C (grey) and D (double ring) race their pieces once round the board
+and up their own grey home column to the centre. Press <b>Roll</b>, then tap the piece you want to move (movable
+pieces are shaded). Roll a <b>1 or 6</b> to bring a piece out onto your start square (thick border). Rolling a 6 gives
+you another roll. Landing on an opponent sends it back to its yard, except on a start square. You need the exact
+number to reach the centre. First to bring every piece home wins.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-cangua', N = 15, NAMES = ['A', 'B', 'C', 'D'];
+  var PATH = [[6, 1], [6, 2], [6, 3], [6, 4], [6, 5], [5, 6], [4, 6], [3, 6], [2, 6], [1, 6], [0, 6], [0, 7], [0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8],
+    [6, 9], [6, 10], [6, 11], [6, 12], [6, 13], [6, 14], [7, 14], [8, 14], [8, 13], [8, 12], [8, 11], [8, 10], [8, 9], [9, 8], [10, 8], [11, 8], [12, 8], [13, 8], [14, 8],
+    [14, 7], [14, 6], [13, 6], [12, 6], [11, 6], [10, 6], [9, 6], [8, 5], [8, 4], [8, 3], [8, 2], [8, 1], [8, 0], [7, 0], [6, 0]];
+  var HOME = [[[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]]];
+  var YARD = [[[2, 2], [2, 3], [3, 2], [3, 3]], [[2, 11], [2, 12], [3, 11], [3, 12]], [[11, 11], [11, 12], [12, 11], [12, 12]], [[11, 2], [11, 3], [12, 2], [12, 3]]];
+  var DONE = [[7, 6], [6, 7], [7, 8], [8, 7]], END = 56;
+  var saved = KG.load(KEY) || {};
+  var mode = saved.mode || '4', npieces = saved.npieces || '4', g = saved.g || null, busy = false;
+
+  function seats() { return mode === '4' || mode === '4p' ? [0, 1, 2, 3] : [0, 2]; }
+  function isHuman(p) { return mode === '2p' || mode === '4p' || p === 0; }
+  function newGame() {
+    var pcs = [], k = parseInt(npieces, 10), s = seats();
+    for (var p = 0; p < 4; p++) { var a = []; for (var j = 0; j < k; j++) a.push(-1); pcs.push(s.indexOf(p) >= 0 ? a : []); }
+    g = { pcs: pcs, turn: 0, die: 0, rolled: false, msg: 'Player A to roll.', winner: -1 };
+  }
+  if (!g) newGame();
+
+  function cellOf(p, pos, idx) {
+    if (pos < 0) return YARD[p][idx];
+    if (pos >= END) return DONE[p];
+    if (pos > 50) return HOME[p][pos - 51];
+    return PATH[(pos + p * 13) % 52];
+  }
+  function trackIndex(p, pos) { return pos >= 0 && pos <= 50 ? (pos + p * 13) % 52 : -1; }
+  function isStart(ti) { return ti % 13 === 0; }
+  function canMove(p, i, d) {
+    var pos = g.pcs[p][i];
+    if (pos >= END) return false;
+    if (pos < 0) return d === 1 || d === 6;
+    return pos + d <= END;
+  }
+  function movable(p, d) { var o = []; for (var i = 0; i < g.pcs[p].length; i++) if (canMove(p, i, d)) o.push(i); return o; }
+  function nextPlayer() {
+    var s = seats(), k = s.indexOf(g.turn);
+    g.turn = s[(k + 1) % s.length];
+    g.rolled = false;
+  }
+  function move(p, i) {
+    var d = g.die, pos = g.pcs[p][i], np = pos < 0 ? 0 : pos + d, ti = trackIndex(p, np), sent = '';
+    g.pcs[p][i] = np;
+    if (ti >= 0 && !isStart(ti)) {
+      for (var q = 0; q < 4; q++) {
+        if (q === p) continue;
+        for (var j = 0; j < g.pcs[q].length; j++) if (trackIndex(q, g.pcs[q][j]) === ti) { g.pcs[q][j] = -1; sent += NAMES[q]; }
+      }
+    }
+    g.msg = NAMES[p] + ' moved' + (pos < 0 ? ' a piece out' : '') + (np === END ? ' a piece home!' : '') + (sent ? ' and sent ' + sent.split('').join(', ') + ' back to the yard!' : '.');
+    var all = true;
+    for (j = 0; j < g.pcs[p].length; j++) if (g.pcs[p][j] < END) all = false;
+    if (all) { g.winner = p; g.msg = 'Player ' + NAMES[p] + ' wins!'; return; }
+    if (d === 6) { g.rolled = false; g.msg += ' Rolled a 6 — ' + NAMES[p] + ' rolls again.'; }
+    else nextPlayer();
+  }
+  function cpuPick(p) {
+    var opts = movable(p, g.die), best = opts[0], bv = -1e9;
+    for (var k = 0; k < opts.length; k++) {
+      var i = opts[k], pos = g.pcs[p][i], np = pos < 0 ? 0 : pos + g.die, ti = trackIndex(p, np), v = np / 10;
+      if (pos < 0) v += 30;
+      if (np === END) v += 40;
+      if (np > 50 && pos <= 50) v += 20;
+      for (var q = 0; q < 4; q++) {
+        if (q === p) continue;
+        for (var j = 0; j < g.pcs[q].length; j++) {
+          var oti = trackIndex(q, g.pcs[q][j]);
+          if (ti >= 0 && oti === ti && !isStart(ti)) v += 50;
+          if (ti >= 0 && oti >= 0 && !isStart(ti)) { var gap = (ti - oti + 52) % 52; if (gap >= 1 && gap <= 6) v -= 15; }
+        }
+      }
+      if (v > bv) { bv = v; best = i; }
+    }
+    return best;
+  }
+  function roll() {
+    g.die = 1 + Math.floor(Math.random() * 6);
+    g.rolled = true;
+    var p = g.turn;
+    if (!movable(p, g.die).length) {
+      g.msg = NAMES[p] + ' rolled ' + g.die + ' — no move.';
+      if (g.die === 6) g.rolled = false; else nextPlayer();
+    } else g.msg = NAMES[p] + ' rolled ' + g.die + (isHuman(p) ? ' — tap a shaded piece.' : '.');
+  }
+  function step() {
+    render();
+    if (g.winner >= 0 || isHuman(g.turn) || busy) return;
+    busy = true;
+    setTimeout(function () {
+      busy = false;
+      if (g.winner >= 0 || isHuman(g.turn)) return;
+      if (!g.rolled) roll();
+      else move(g.turn, cpuPick(g.turn));
+      step();
+    }, 700);
+  }
+
+  function render() {
+    var p = g.turn;
+    KG.text(KG.$('status'), g.winner >= 0 ? g.msg : g.msg + (isHuman(p) && !g.rolled ? ' ' + NAMES[p] + ': press Roll.' : ''));
+    KG.text(KG.$('die'), g.die ? String(g.die) : '–');
+    var cls = {}, tokens = {}, k, q, j;
+    for (k = 0; k < 52; k++) cls[PATH[k][0] * N + PATH[k][1]] = k % 13 === 0 ? 'st' : 'tr';
+    for (q = 0; q < 4; q++) for (k = 0; k < 5; k++) cls[HOME[q][k][0] * N + HOME[q][k][1]] = 'hc';
+    var movableCells = {};
+    if (g.rolled && isHuman(p) && g.winner < 0) { var ms = movable(p, g.die); for (k = 0; k < ms.length; k++) { var cc = cellOf(p, g.pcs[p][ms[k]], ms[k]); movableCells[cc[0] * N + cc[1]] = 1; } }
+    for (q = 0; q < 4; q++) for (j = 0; j < g.pcs[q].length; j++) {
+      var c = cellOf(q, g.pcs[q][j], j), key = c[0] * N + c[1];
+      (tokens[key] = tokens[key] || []).push(q);
+    }
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 300, 680), S = Math.floor(W / N) - 1, h = ['<table class="lu">'];
+    for (var r = 0; r < N; r++) {
+      h.push('<tr>');
+      for (var col = 0; col < N; col++) {
+        var key2 = r * N + col, cl = cls[key2] || '';
+        if (r >= 6 && r <= 8 && col >= 6 && col <= 8) cl = 'ctr';
+        else if (!cl && ((r < 6 || r > 8) && (col < 6 || col > 8))) cl = 'yd';
+        if (movableCells[key2]) cl += ' mv';
+        var inner = '', tk = tokens[key2];
+        if (tk) {
+          if (tk.length === 1 || cl === 'ctr') {
+            var dsz = Math.round(S * 0.78);
+            inner = tk.length === 1 ? '<span class="tok t' + NAMES[tk[0]] + '" style="width:' + dsz + 'px;height:' + dsz + 'px;line-height:' + (dsz - 4) + 'px;font-size:' + Math.round(S * 0.42) + 'px">' + NAMES[tk[0]] + '</span>'
+              : '<span style="font-size:' + Math.round(S * 0.32) + 'px">' + NAMES[tk[0]] + '&times;' + tk.length + '</span>';
+          } else {
+            var t = [];
+            for (k = 0; k < tk.length; k++) t.push(NAMES[tk[k]]);
+            inner = '<span style="font-size:' + Math.round(S * 0.3) + 'px;line-height:1">' + t.join('') + '</span>';
+          }
+        }
+        h.push('<td data-sq="' + key2 + '" class="' + cl + '" style="width:' + S + 'px;height:' + S + 'px">' + inner + '</td>');
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { mode: mode, npieces: npieces, g: g });
+  }
+  KG.$('rollBtn').onclick = function () {
+    if (busy || g.winner >= 0 || !isHuman(g.turn) || g.rolled) return;
+    roll(); step();
+  };
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || busy || g.winner >= 0 || !isHuman(g.turn) || !g.rolled) return;
+    var key = parseInt(v, 10), p = g.turn, ms = movable(p, g.die);
+    for (var k = 0; k < ms.length; k++) {
+      var c = cellOf(p, g.pcs[p][ms[k]], ms[k]);
+      if (c[0] * N + c[1] === key) { move(p, ms[k]); step(); return; }
+    }
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.winner < 0 && !window.confirm('Start a new game?')) return;
+    newGame(); step();
+  };
+  KG.buttonGroup('modes', mode, function (v) {
+    if (g.winner < 0 && !window.confirm('Start a new game with these players?')) return false;
+    mode = v; newGame(); step();
+  });
+  KG.buttonGroup('pieces', npieces, function (v) {
+    if (g.winner < 0 && !window.confirm('Start a new game?')) return false;
+    npieces = v; newGame(); step();
+  });
+  window.onresize = render;
+  step();
+})();
+</script>
+</body>
+</html>

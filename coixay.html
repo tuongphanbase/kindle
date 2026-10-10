@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Coi Xay</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .mo { border-collapse: collapse; margin: 0 auto; }
+  .mo td { padding: 0; }
+  .mo .in { position: relative; }
+  .mo .pt { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; C&#7889;i Xay</span></div>
+<div class="controls" id="modes"><button data-v="ai1">Vs Computer (White)</button><button data-v="ai2">Vs Computer (Black)</button><button data-v="2p">2 Player</button></div>
+<div class="controls" id="levels">Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="newBtn">New Game</button><button id="undoBtn">Undo</button></div>
+<p class="help">Nine Men's Morris. White starts. First take turns placing your 9 pieces on empty points. Then take
+turns moving a piece along a line to a neighbouring empty point. Make a <b>mill</b> &mdash; three of your pieces in a
+straight line &mdash; and you remove one of your opponent's pieces (not one in a mill, unless all of them are). When
+you are down to 3 pieces you may jump to any empty point. You lose with fewer than 3 pieces or no move.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-coixay';
+  var PTS = [[0, 0], [0, 3], [0, 6], [1, 1], [1, 3], [1, 5], [2, 2], [2, 3], [2, 4], [3, 0], [3, 1], [3, 2], [3, 4], [3, 5], [3, 6], [4, 2], [4, 3], [4, 4], [5, 1], [5, 3], [5, 5], [6, 0], [6, 3], [6, 6]];
+  var MILLS = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 13, 14], [15, 16, 17], [18, 19, 20], [21, 22, 23],
+    [0, 9, 21], [3, 10, 18], [6, 11, 15], [1, 4, 7], [16, 19, 22], [8, 12, 17], [5, 13, 20], [2, 14, 23]];
+  var ADJ = [], AT = {}, i, k;
+  for (i = 0; i < 24; i++) { ADJ.push([]); AT[PTS[i][0] * 7 + PTS[i][1]] = i; }
+  for (k = 0; k < MILLS.length; k++) {
+    var M = MILLS[k];
+    ADJ[M[0]].push(M[1]); ADJ[M[1]].push(M[0]); ADJ[M[1]].push(M[2]); ADJ[M[2]].push(M[1]);
+  }
+  // Which line pieces each grid cell needs: draw every edge of every mill.
+  var LINES = {};
+  function mark(r, c, d) { var key = r * 7 + c; LINES[key] = LINES[key] || {}; LINES[key][d] = 1; }
+  for (k = 0; k < MILLS.length; k++) for (var e = 0; e < 2; e++) {
+    var a = PTS[MILLS[k][e]], b = PTS[MILLS[k][e + 1]];
+    if (a[0] === b[0]) { for (var c = a[1]; c <= b[1]; c++) { if (c > a[1]) mark(a[0], c, 'l'); if (c < b[1]) mark(a[0], c, 'r'); } }
+    else { for (var r = a[0]; r <= b[0]; r++) { if (r > a[0]) mark(r, a[1], 'u'); if (r < b[0]) mark(r, a[1], 'd'); } }
+  }
+
+  function opp(t) { return t === 'w' ? 'b' : 'w'; }
+  function count(b, t) { var n = 0; for (var j = 0; j < 24; j++) if (b[j] === t) n++; return n; }
+  function inMill(b, p) {
+    for (var j = 0; j < MILLS.length; j++) { var m = MILLS[j]; if (m.indexOf(p) >= 0 && b[m[0]] && b[m[0]] === b[m[1]] && b[m[1]] === b[m[2]]) return true; }
+    return false;
+  }
+  function newState() {
+    var b = [];
+    for (var j = 0; j < 24; j++) b.push('');
+    return { b: b, t: 'w', hand: { w: 9, b: 9 }, hm: 0 };
+  }
+  function make(s, m) {
+    var b = s.b.slice(), hand = { w: s.hand.w, b: s.hand.b };
+    if (m.f < 0) hand[s.t]--; else b[m.f] = '';
+    b[m.t] = s.t;
+    if (m.x >= 0) b[m.x] = '';
+    return { b: b, t: opp(s.t), hand: hand, hm: m.x >= 0 ? 0 : s.hm + 1 };
+  }
+  // Each move carries the piece it removes (x), so a mill gives one move per removable piece.
+  function legal(s) {
+    var t = s.t, o = opp(t), base = [], j, q;
+    if (s.hand[t] > 0) { for (j = 0; j < 24; j++) if (!s.b[j]) base.push({ f: -1, t: j }); }
+    else {
+      var fly = count(s.b, t) === 3;
+      for (j = 0; j < 24; j++) {
+        if (s.b[j] !== t) continue;
+        var targets = fly ? null : ADJ[j];
+        if (fly) { targets = []; for (q = 0; q < 24; q++) if (!s.b[q]) targets.push(q); }
+        for (q = 0; q < targets.length; q++) if (!s.b[targets[q]]) base.push({ f: j, t: targets[q] });
+      }
+    }
+    var out = [];
+    for (j = 0; j < base.length; j++) {
+      var m = base[j], b2 = s.b.slice();
+      if (m.f >= 0) b2[m.f] = '';
+      b2[m.t] = t;
+      if (!inMill(b2, m.t)) { m.x = -1; out.push(m); continue; }
+      var removable = [], all = [];
+      for (q = 0; q < 24; q++) if (b2[q] === o) { all.push(q); if (!inMill(b2, q)) removable.push(q); }
+      if (!removable.length) removable = all;
+      if (!removable.length) { m.x = -1; out.push(m); continue; }
+      for (q = 0; q < removable.length; q++) out.push({ f: m.f, t: m.t, x: removable[q] });
+    }
+    for (j = 0; j < out.length; j++) out[j].ns = make(s, out[j]);
+    return out;
+  }
+  function lost(s, ms) { return (s.hand[s.t] === 0 && count(s.b, s.t) < 3) || !ms.length; }
+
+  var R = {
+    legal: legal,
+    evaluate: function (s) {
+      var t = s.t, o = opp(t), v = (count(s.b, t) + s.hand[t] - count(s.b, o) - s.hand[o]) * 100, j;
+      for (j = 0; j < MILLS.length; j++) {
+        var m = MILLS[j], a = 0, z = 0, e = 0;
+        for (var q = 0; q < 3; q++) { var x = s.b[m[q]]; if (x === t) a++; else if (x === o) z++; else e++; }
+        if (a === 2 && e === 1) v += 12; if (z === 2 && e === 1) v -= 12;
+      }
+      return v;
+    },
+    terminal: function (s, ms, ply) {
+      if (lost(s, ms)) return -KG.MATE + ply;
+      if (s.hm >= 100) return 0;
+      return null;
+    }
+  };
+
+  var saved = KG.load(KEY) || {};
+  var st = { s: saved.s || newState(), hist: saved.hist || [], last: saved.last || null, mode: saved.mode || 'ai1', level: saved.level || '2' };
+  var sel = -1, pending = null, thinking = false, moves = [];
+  function human() { return st.mode === 'ai2' ? 'b' : 'w'; }
+  function over() { return lost(st.s, moves) || st.s.hm >= 100; }
+  function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !over(); }
+  function name(t) { return t === 'w' ? 'White' : 'Black'; }
+  function play(m) {
+    st.hist.push({ s: st.s, last: st.last });
+    st.s = m.ns || make(st.s, m);
+    st.last = { f: m.f, t: m.t };
+    sel = -1; pending = null;
+    refresh();
+  }
+  function refresh() {
+    moves = legal(st.s);
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    var s = st.s, txt;
+    if (lost(s, moves)) txt = name(opp(s.t)) + ' wins!';
+    else if (s.hm >= 100) txt = 'Draw — 50 moves each without a mill.';
+    else if (thinking) txt = 'Computer is thinking…';
+    else if (pending) txt = 'Mill! Tap one of ' + name(opp(s.t)) + '’s pieces to remove it.';
+    else txt = name(s.t) + (s.hand[s.t] ? ' to place a piece (' + s.hand[s.t] + ' left)' : ' to move') + (st.mode === '2p' ? '' : (s.t === human() ? ' (you)' : ' (computer)'));
+    txt += ' · White ' + (count(s.b, 'w') + s.hand.w) + ', Black ' + (count(s.b, 'b') + s.hand.b);
+    KG.text(KG.$('status'), txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !thinking) {
+      thinking = true;
+      KG.text(KG.$('status'), 'Computer is thinking…');
+      setTimeout(function () {
+        thinking = false;
+        if (!computersTurn()) return;
+        var d = st.level === '1' ? 1 : (st.level === '2' ? 3 : 4);
+        play(KG.bestNegamax(R, st.s, d, st.level === '1' ? 60 : 0));
+      }, 60);
+    }
+  }
+  function render() {
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 280, 600), S = Math.floor(W / 7), half = Math.floor(S / 2), lw = 3;
+    var targets = {}, j;
+    if (!pending) for (j = 0; j < moves.length; j++) if (moves[j].f === sel && (sel >= 0 || st.s.hand[st.s.t] > 0)) targets[moves[j].t] = 1;
+    var h = ['<table class="mo">'];
+    for (var r = 0; r < 7; r++) {
+      h.push('<tr>');
+      for (var c = 0; c < 7; c++) {
+        var key = r * 7 + c, L = LINES[key] || {}, p = AT[key], inner = '';
+        if (L.l) inner += '<div class="seg" style="left:0;top:' + (half - 1) + 'px;width:' + half + 'px;height:' + lw + 'px"></div>';
+        if (L.r) inner += '<div class="seg" style="left:' + half + 'px;top:' + (half - 1) + 'px;width:' + (S - half) + 'px;height:' + lw + 'px"></div>';
+        if (L.u) inner += '<div class="seg" style="left:' + (half - 1) + 'px;top:0;width:' + lw + 'px;height:' + half + 'px"></div>';
+        if (L.d) inner += '<div class="seg" style="left:' + (half - 1) + 'px;top:' + half + 'px;width:' + lw + 'px;height:' + (S - half) + 'px"></div>';
+        if (p !== undefined) {
+          var pc = st.s.b[p];
+          if (pc) {
+            var dsz = Math.round(S * 0.7), o = Math.round((S - dsz) / 2);
+            inner += '<div class="disc ' + (pc === 'w' ? 'dw' : 'db') + '" style="left:' + o + 'px;top:' + o + 'px;width:' + dsz + 'px;height:' + dsz + 'px"></div>';
+          } else {
+            var d2 = Math.round(S * (targets[p] ? 0.34 : 0.18)), o2 = Math.round((S - d2) / 2);
+            inner += '<div class="pt" style="left:' + o2 + 'px;top:' + o2 + 'px;width:' + d2 + 'px;height:' + d2 + 'px' + (targets[p] ? ';background:#999' : '') + '"></div>';
+          }
+          if (p === sel) inner += '<div class="sel"></div>';
+          else if (st.last && (p === st.last.t || p === st.last.f)) inner += '<div class="last"></div>';
+        }
+        h.push('<td' + (p !== undefined ? ' data-sq="' + p + '"' : '') + '><div class="in" style="width:' + S + 'px;height:' + S + 'px">' + inner + '</div></td>');
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || thinking || computersTurn() || over()) return;
+    var p = parseInt(v, 10), j;
+    if (pending) {
+      for (j = 0; j < pending.length; j++) if (pending[j].x === p) { play(pending[j]); return; }
+      return;
+    }
+    var from = st.s.hand[st.s.t] > 0 ? -1 : sel, cands = [];
+    for (j = 0; j < moves.length; j++) if (moves[j].f === from && moves[j].t === p) cands.push(moves[j]);
+    if (cands.length === 1) { play(cands[0]); return; }
+    if (cands.length > 1) { pending = cands; refresh(); return; }
+    sel = st.s.hand[st.s.t] === 0 && st.s.b[p] === st.s.t && sel !== p ? p : -1;
+    render();
+  };
+  KG.$('newBtn').onclick = function () {
+    if (thinking) return;
+    if (st.hist.length && !over() && !window.confirm('Start a new game?')) return;
+    st.s = newState(); st.hist = []; st.last = null; sel = -1; pending = null; refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (thinking || !st.hist.length) return;
+    do { var h = st.hist.pop(); st.s = h.s; st.last = h.last; } while (st.mode !== '2p' && st.hist.length && st.s.t !== human());
+    sel = -1; pending = null; refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; sel = -1; pending = null; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; KG.save(KEY, st); });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>

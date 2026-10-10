@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Ultimate Tic-Tac-Toe</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .ut { border-collapse: collapse; margin: 0 auto; border: 4px solid #000; }
+  .ut td { padding: 0; border: 1px solid #888; text-align: center; vertical-align: middle; font-weight: bold; font-family: Arial, Helvetica, sans-serif; }
+  .ut td.br { border-right: 4px solid #000; }
+  .ut td.bb { border-bottom: 4px solid #000; }
+  .ut .off { background: #ccc; }
+  .ut .wx { background: #fff; color: #000; }
+  .ut .wo { background: #444; color: #fff; }
+  .ut .lm { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Ultimate Tic-Tac-Toe</span></div>
+<div class="controls" id="modes"><button data-v="ai1">Vs Computer (X)</button><button data-v="ai2">Vs Computer (O)</button><button data-v="2p">2 Player</button></div>
+<div class="controls" id="levels">Level: <button data-v="1">Easy</button><button data-v="2">Medium</button><button data-v="3">Hard</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="newBtn">New Game</button><button id="undoBtn">Undo</button></div>
+<p class="help">Nine small tic-tac-toe boards make one big board. Win a small board with three in a row to claim it;
+claim three small boards in a row to win. The catch: the square you play in decides which small board your opponent
+must play in next. Grey squares are boards you can't play in this turn. If you are sent to a board that is already
+won or full, you may play anywhere. Won boards are shown filled with the winner's letter; the last move is underlined.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-uttt', LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  var saved = KG.load(KEY) || {};
+  var st = { s: saved.s || null, hist: saved.hist || [], mode: saved.mode || 'ai1', level: saved.level || '2' };
+  var thinking = false;
+
+  function fresh() {
+    var b = [], sm = [];
+    for (var i = 0; i < 81; i++) b.push('');
+    for (i = 0; i < 9; i++) sm.push('');
+    st.s = { b: b, sm: sm, t: 'x', next: -1, last: -1, win: '' };
+    st.hist = [];
+  }
+  if (!st.s) fresh();
+
+  function lineWin(a, get) {
+    for (var k = 0; k < 8; k++) { var L = LINES[k], v = get(a, L[0]); if (v && v !== 'd' && v === get(a, L[1]) && v === get(a, L[2])) return v; }
+    return '';
+  }
+  function moves(s) {
+    if (s.win) return [];
+    var out = [];
+    for (var B = 0; B < 9; B++) {
+      if (s.sm[B] || (s.next >= 0 && s.next !== B)) continue;
+      for (var c = 0; c < 9; c++) if (!s.b[B * 9 + c]) out.push(B * 9 + c);
+    }
+    return out;
+  }
+  function play(s, m) {
+    var b = s.b.slice(), sm = s.sm.slice(), B = Math.floor(m / 9), c = m % 9;
+    b[m] = s.t;
+    var w = lineWin(B, function (bb, k) { return b[bb * 9 + k]; });
+    if (w) sm[B] = w;
+    else { var full = true; for (var k = 0; k < 9; k++) if (!b[B * 9 + k]) full = false; if (full) sm[B] = 'd'; }
+    var big = lineWin(0, function (z, k) { return sm[k]; }), any = false;
+    for (k = 0; k < 9; k++) if (!sm[k]) any = true;
+    return { b: b, sm: sm, t: s.t === 'x' ? 'o' : 'x', next: sm[c] ? -1 : c, last: m, win: big || (any ? '' : 'd') };
+  }
+  function evaluate(s, me) {
+    var you = me === 'x' ? 'o' : 'x', v = 0, k, B;
+    for (k = 0; k < 8; k++) {
+      var L = LINES[k], m = 0, y = 0, e = 0;
+      for (var j = 0; j < 3; j++) { var q = s.sm[L[j]]; if (q === me) m++; else if (q === you) y++; else if (!q) e++; }
+      if (!y && m === 2 && e) v += 60; if (!m && y === 2 && e) v -= 60;
+    }
+    for (B = 0; B < 9; B++) {
+      var w = B === 4 ? 1.5 : (B % 2 === 0 ? 1.2 : 1);
+      if (s.sm[B] === me) v += 100 * w; else if (s.sm[B] === you) v -= 100 * w;
+      else if (!s.sm[B]) {
+        for (k = 0; k < 8; k++) {
+          var L2 = LINES[k], mm = 0, yy = 0;
+          for (j = 0; j < 3; j++) { var x = s.b[B * 9 + L2[j]]; if (x === me) mm++; else if (x === you) yy++; }
+          if (mm === 2 && !yy) v += 8 * w; if (yy === 2 && !mm) v -= 8 * w;
+        }
+      }
+    }
+    return v;
+  }
+  function search(s, depth, alpha, beta, ply) {
+    if (s.win) return s.win === 'd' ? 0 : (s.win === s.t ? KG.MATE - ply : -KG.MATE + ply);
+    var ms = moves(s);
+    if (depth <= 0 || !ms.length) return evaluate(s, s.t);
+    if (ms.length > 20 && depth > 2) depth = 2;
+    for (var i = 0; i < ms.length; i++) {
+      var v = -search(play(s, ms[i]), depth - 1, -beta, -alpha, ply + 1);
+      if (v >= beta) return v;
+      if (v > alpha) alpha = v;
+    }
+    return alpha;
+  }
+  function best(s) {
+    var ms = KG.shuffle(moves(s)), depth = st.level === '1' ? 1 : (st.level === '2' ? 3 : 5), bm = ms[0], bv = -KG.INF;
+    if (ms.length > 20) depth = Math.min(depth, 3);
+    for (var i = 0; i < ms.length; i++) {
+      var v = -search(play(s, ms[i]), depth - 1, -KG.INF, -bv, 1) + (st.level === '1' ? Math.random() * 80 : 0);
+      if (v > bv) { bv = v; bm = ms[i]; }
+    }
+    return bm;
+  }
+  function human() { return st.mode === 'ai2' ? 'o' : 'x'; }
+  function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !st.s.win; }
+  function doMove(m) { st.hist.push(st.s); st.s = play(st.s, m); refresh(); }
+
+  function refresh() {
+    KG.$('levels').style.display = st.mode === '2p' ? 'none' : '';
+    var s = st.s, txt;
+    if (s.win) txt = s.win === 'd' ? 'Draw!' : (st.mode === '2p' ? s.win.toUpperCase() + ' wins!' : (s.win === human() ? 'You win!' : 'Computer wins.'));
+    else txt = thinking ? 'Computer is thinking…' : s.t.toUpperCase() + ' to move' + (st.mode === '2p' ? '' : (s.t === human() ? ' (you)' : ' (computer)')) +
+      (s.next >= 0 ? ' — in the white board' : ' — anywhere');
+    KG.text(KG.$('status'), txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !thinking) {
+      thinking = true;
+      KG.text(KG.$('status'), 'Computer is thinking…');
+      setTimeout(function () { thinking = false; if (computersTurn()) doMove(best(st.s)); }, 60);
+    }
+  }
+  function render() {
+    var s = st.s, W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 280, 620), S = Math.floor((W - 12) / 9) - 1;
+    var allowed = {}, ms = moves(s), i, h = ['<table class="ut">'];
+    for (i = 0; i < ms.length; i++) allowed[Math.floor(ms[i] / 9)] = 1;
+    for (var r = 0; r < 9; r++) {
+      h.push('<tr>');
+      for (var c = 0; c < 9; c++) {
+        var B = Math.floor(r / 3) * 3 + Math.floor(c / 3), k = (r % 3) * 3 + c % 3, idx = B * 9 + k, won = s.sm[B];
+        var cls = [];
+        if (c % 3 === 2 && c < 8) cls.push('br');
+        if (r % 3 === 2 && r < 8) cls.push('bb');
+        if (won === 'x') cls.push('wx'); else if (won === 'o') cls.push('wo'); else if (!allowed[B] && !s.win) cls.push('off');
+        if (idx === s.last) cls.push('lm');
+        var txt = won === 'x' || won === 'o' ? won.toUpperCase() : s.b[idx].toUpperCase();
+        h.push('<td data-sq="' + idx + '" class="' + cls.join(' ') + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.62) + 'px">' + txt + '</td>');
+      }
+      h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || thinking || computersTurn() || st.s.win) return;
+    var m = parseInt(v, 10);
+    if (moves(st.s).indexOf(m) >= 0) doMove(m);
+  };
+  KG.$('newBtn').onclick = function () {
+    if (thinking) return;
+    if (st.hist.length && !st.s.win && !window.confirm('Start a new game?')) return;
+    fresh(); refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (thinking || !st.hist.length) return;
+    do { st.s = st.hist.pop(); } while (st.mode !== '2p' && st.hist.length && st.s.t !== human());
+    refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; refresh(); });
+  KG.buttonGroup('levels', st.level, function (v) { st.level = v; KG.save(KEY, st); });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Co Vay</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .go { border-collapse: collapse; margin: 0 auto; background: #ddd; }
+  .go td { padding: 0; }
+  .go .in { position: relative; }
+  .go .hoshi { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .go .terr { position: absolute; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">C&#7901; V&acirc;y</span></div>
+<div class="controls" id="modes"><button data-v="ai1">Vs Computer (Black)</button><button data-v="ai2">Vs Computer (White)</button><button data-v="2p">2 Player</button></div>
+<div class="controls" id="sizes">Board: <button data-v="9">9&times;9</button><button data-v="13">13&times;13</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="passBtn">Pass</button><button id="undoBtn">Undo</button><button id="newBtn">New Game</button></div>
+<p class="help">Go. Black plays first. Take turns placing a stone on an empty point. A group of stones with no empty
+point next to it is captured. You may not play a move that leaves your own stones with no liberties (unless it
+captures), or that repeats the position from just before your opponent's move (ko). When both players pass in a row
+the game ends and is scored: your stones plus the empty areas only you surround, and White gets 6.5 points (komi).
+Capture any dead stones before passing. The computer is a beginner-level player.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-covay', KOMI = 6.5;
+  var saved = KG.load(KEY) || {};
+  var st = { s: saved.s || null, hist: saved.hist || [], mode: saved.mode || 'ai1', size: saved.size || '9' };
+  var thinking = false, msg = '';
+
+  function fresh() {
+    var n = parseInt(st.size, 10), b = [];
+    for (var i = 0; i < n * n; i++) b.push(0);
+    st.s = { n: n, b: b, t: 1, prev: '', passes: 0, cap: [0, 0, 0], last: -1, over: false };
+    st.hist = []; msg = '';
+  }
+  if (!st.s || String(st.s.n) !== st.size) fresh();
+
+  function nbs(n, p) {
+    var r = Math.floor(p / n), c = p % n, o = [];
+    if (r > 0) o.push(p - n); if (r < n - 1) o.push(p + n); if (c > 0) o.push(p - 1); if (c < n - 1) o.push(p + 1);
+    return o;
+  }
+  function group(b, n, p) {
+    var col = b[p], stones = [p], seen = {}, libs = {}, nl = 0, q = 0;
+    seen[p] = 1;
+    while (q < stones.length) {
+      var x = stones[q++], nb = nbs(n, x);
+      for (var k = 0; k < nb.length; k++) {
+        var y = nb[k];
+        if (!b[y]) { if (!libs[y]) { libs[y] = 1; nl++; } }
+        else if (b[y] === col && !seen[y]) { seen[y] = 1; stones.push(y); }
+      }
+    }
+    return { stones: stones, libs: nl, lib: libs };
+  }
+  // Returns the new state, or null if the move is illegal.
+  function play(s, p) {
+    var n = s.n, b = s.b.slice(), me = s.t, you = 3 - me, captured = 0, k;
+    if (b[p]) return null;
+    b[p] = me;
+    var nb = nbs(n, p);
+    for (k = 0; k < nb.length; k++) {
+      if (b[nb[k]] !== you) continue;
+      var gr = group(b, n, nb[k]);
+      if (!gr.libs) { for (var j = 0; j < gr.stones.length; j++) b[gr.stones[j]] = 0; captured += gr.stones.length; }
+    }
+    if (!group(b, n, p).libs) return null;
+    var key = b.join('');
+    if (key === s.prev) return null;
+    var cap = s.cap.slice(); cap[me] += captured;
+    return { n: n, b: b, t: you, prev: s.b.join(''), passes: 0, cap: cap, last: p, over: false, captured: captured };
+  }
+  function pass(s) {
+    return { n: s.n, b: s.b.slice(), t: 3 - s.t, prev: s.b.join(''), passes: s.passes + 1, cap: s.cap.slice(), last: -1, over: s.passes + 1 >= 2 };
+  }
+  // Area scoring: stones plus empty regions that touch only one colour.
+  function score(s) {
+    var n = s.n, b = s.b, owner = [], pts = [0, 0, 0], i;
+    for (i = 0; i < n * n; i++) owner.push(b[i]);
+    var seen = {};
+    for (i = 0; i < n * n; i++) {
+      if (b[i] || seen[i]) continue;
+      var region = [i], touch = {}, q = 0;
+      seen[i] = 1;
+      while (q < region.length) {
+        var x = region[q++], nb = nbs(n, x);
+        for (var k = 0; k < nb.length; k++) {
+          var y = nb[k];
+          if (b[y]) touch[b[y]] = 1;
+          else if (!seen[y]) { seen[y] = 1; region.push(y); }
+        }
+      }
+      var who = touch[1] && !touch[2] ? 1 : (touch[2] && !touch[1] ? 2 : 0);
+      for (k = 0; k < region.length; k++) owner[region[k]] = who;
+    }
+    for (i = 0; i < n * n; i++) pts[owner[i]]++;
+    return { black: pts[1], white: pts[2] + KOMI, owner: owner };
+  }
+  function isEye(b, n, p, col) {
+    var nb = nbs(n, p);
+    for (var k = 0; k < nb.length; k++) if (b[nb[k]] !== col) return false;
+    var r = Math.floor(p / n), c = p % n, bad = 0, edge = false, D = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    for (k = 0; k < 4; k++) {
+      var rr = r + D[k][0], cc = c + D[k][1];
+      if (rr < 0 || rr >= n || cc < 0 || cc >= n) { edge = true; continue; }
+      if (b[rr * n + cc] === 3 - col) bad++;
+    }
+    return edge ? bad === 0 : bad <= 1;
+  }
+  // A simple player: capture, save groups in atari, avoid self-atari, never fill its own eyes, prefer good shape.
+  function aiMove(s) {
+    var n = s.n, me = s.t, you = 3 - me, best = -1, bv = -1e9, stones = 0, i, mine = score(s).owner;
+    for (i = 0; i < n * n; i++) if (s.b[i]) stones++;
+    for (i = 0; i < n * n; i++) {
+      // Skip eyes and empty areas it already surrounds: playing there gains nothing.
+      if (s.b[i] || isEye(s.b, n, i, me) || mine[i] === me) continue;
+      var ns = play(s, i);
+      if (!ns) continue;
+      var v = ns.captured * 12, nb = nbs(n, i), k, gr = group(ns.b, n, i);
+      if (gr.libs === 1 && !ns.captured) v -= gr.stones.length * 10 + 6;
+      if (gr.libs >= 3) v += 2;
+      for (k = 0; k < nb.length; k++) {
+        var y = nb[k];
+        if (s.b[y] === me) { var old = group(s.b, n, y); if (old.libs === 1 && gr.libs >= 2) v += old.stones.length * 9; }
+        if (ns.b[y] === you) { var og = group(ns.b, n, y); if (og.libs === 1) v += og.stones.length * 4 + 2; if (og.libs === 2) v += 1; }
+      }
+      var r = Math.floor(i / n), c = i % n, line = Math.min(r, c, n - 1 - r, n - 1 - c);
+      if (stones < n * 1.5) v += line === 2 || line === 3 ? 4 : (line === 0 ? -4 : 0);
+      else if (line === 0) v -= 1;
+      var near = 0;
+      for (k = 0; k < nb.length; k++) if (s.b[nb[k]]) near++;
+      v += near ? 1 : 0;
+      v += Math.random() * 1.5;
+      if (v > bv) { bv = v; best = i; }
+    }
+    if (best < 0 || (s.passes && bv < 3)) return -1;
+    return best;
+  }
+
+  function human() { return st.mode === 'ai2' ? 2 : 1; }
+  function computersTurn() { return st.mode !== '2p' && st.s.t !== human() && !st.s.over; }
+  function name(c) { return c === 1 ? 'Black' : 'White'; }
+  function doMove(p) {
+    var ns = p < 0 ? pass(st.s) : play(st.s, p);
+    if (!ns) { msg = 'That move is not allowed (no liberties or ko).'; refresh(); return; }
+    st.hist.push(st.s); st.s = ns;
+    msg = p < 0 ? name(3 - ns.t) + ' passed.' : '';
+    refresh();
+  }
+  function refresh() {
+    var s = st.s, txt;
+    if (s.over) {
+      var sc = score(s), diff = sc.black - sc.white;
+      txt = 'Game over — Black ' + sc.black + ', White ' + sc.white + ': ' + (diff > 0 ? 'Black' : 'White') + ' wins by ' + Math.abs(diff) + '.';
+    } else txt = (thinking ? 'Computer is thinking…' : name(s.t) + ' to play' + (st.mode === '2p' ? '' : (s.t === human() ? ' (you)' : ' (computer)'))) +
+      ' · captured: Black ' + s.cap[1] + ', White ' + s.cap[2] + (msg ? ' — ' + msg : '');
+    KG.text(KG.$('status'), txt);
+    render();
+    KG.save(KEY, st);
+    if (computersTurn() && !thinking) {
+      thinking = true;
+      setTimeout(function () { thinking = false; if (computersTurn()) doMove(aiMove(st.s)); }, 60);
+    }
+  }
+  function render() {
+    var s = st.s, n = s.n, W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 290, 640), S = Math.floor(W / n), half = Math.floor(S / 2), lw = S >= 50 ? 2 : 1;
+    var hoshi = n === 9 ? [20, 24, 40, 56, 60] : [42, 48, 84, 120, 126], owner = s.over ? score(s).owner : null, h = ['<table class="go">'];
+    for (var i = 0; i < n * n; i++) {
+      if (i % n === 0) h.push('<tr>');
+      var r = Math.floor(i / n), c = i % n, inner = '';
+      if (c > 0) inner += '<div class="seg" style="left:0;top:' + half + 'px;width:' + half + 'px;height:' + lw + 'px"></div>';
+      if (c < n - 1) inner += '<div class="seg" style="left:' + half + 'px;top:' + half + 'px;width:' + (S - half) + 'px;height:' + lw + 'px"></div>';
+      if (r > 0) inner += '<div class="seg" style="left:' + half + 'px;top:0;width:' + lw + 'px;height:' + half + 'px"></div>';
+      if (r < n - 1) inner += '<div class="seg" style="left:' + half + 'px;top:' + half + 'px;width:' + lw + 'px;height:' + (S - half) + 'px"></div>';
+      if (hoshi.indexOf(i) >= 0 && !s.b[i]) { var hd = Math.max(5, Math.round(S * 0.16)); inner += '<div class="hoshi" style="left:' + (half - Math.floor(hd / 2)) + 'px;top:' + (half - Math.floor(hd / 2)) + 'px;width:' + hd + 'px;height:' + hd + 'px"></div>'; }
+      if (s.b[i]) {
+        var d = Math.round(S * 0.9), o = Math.round((S - d) / 2);
+        inner += '<div class="disc ' + (s.b[i] === 1 ? 'db' : 'dw') + '" style="left:' + o + 'px;top:' + o + 'px;width:' + d + 'px;height:' + d + 'px"></div>';
+        if (i === s.last) { var q = Math.round(S * 0.22); inner += '<div style="position:absolute;left:' + Math.round((S - q) / 2) + 'px;top:' + Math.round((S - q) / 2) + 'px;width:' + q + 'px;height:' + q + 'px;background:' + (s.b[i] === 1 ? '#fff' : '#000') + '"></div>'; }
+      } else if (owner && owner[i]) {
+        var t = Math.round(S * 0.3);
+        inner += '<div class="terr" style="left:' + Math.round((S - t) / 2) + 'px;top:' + Math.round((S - t) / 2) + 'px;width:' + t + 'px;height:' + t + 'px;background:' + (owner[i] === 1 ? '#000' : '#fff') + ';border:1px solid #000"></div>';
+      }
+      h.push('<td data-sq="' + i + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">' + inner + '</div></td>');
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || thinking || computersTurn() || st.s.over) return;
+    doMove(parseInt(v, 10));
+  };
+  KG.$('passBtn').onclick = function () { if (!thinking && !computersTurn() && !st.s.over) doMove(-1); };
+  KG.$('newBtn').onclick = function () {
+    if (thinking) return;
+    if (st.hist.length && !st.s.over && !window.confirm('Start a new game?')) return;
+    fresh(); refresh();
+  };
+  KG.$('undoBtn').onclick = function () {
+    if (thinking || !st.hist.length) return;
+    do { st.s = st.hist.pop(); } while (st.mode !== '2p' && st.hist.length && st.s.t !== human());
+    msg = ''; refresh();
+  };
+  KG.buttonGroup('modes', st.mode, function (v) { st.mode = v; refresh(); });
+  KG.buttonGroup('sizes', st.size, function (v) {
+    if (st.hist.length && !st.s.over && !window.confirm('Start a new game on this board?')) return false;
+    st.size = v; fresh(); refresh();
+  });
+  window.onresize = render;
+  refresh();
+})();
+</script>
+</body>
+</html>

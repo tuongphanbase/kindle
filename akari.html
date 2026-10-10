@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Akari</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .ak { border-collapse: collapse; margin: 0 auto; border: 2px solid #000; }
+  .ak td { padding: 0; border: 1px solid #888; text-align: center; vertical-align: middle; font-weight: bold; font-family: Arial, Helvetica, sans-serif; }
+  .ak .wall { background: #000; color: #fff; }
+  .ak .wall.ok { color: #777; }
+  .ak .lit { background: #ccc; }
+  .ak .in { position: relative; }
+  .ak .bulb { position: absolute; background: #000; border-radius: 50%; -webkit-border-radius: 50%; }
+  .ak .bulb.bad { background: #fff; border: 4px solid #000; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Akari</span></div>
+<div class="controls" id="levels"><button data-v="7">7&times;7</button><button data-v="10">10&times;10</button><button data-v="12">12&times;12</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="undoBtn">Undo</button><button id="clearBtn">Clear</button><button id="newBtn">New Puzzle</button></div>
+<p class="help">Light Up. Place lamps (black discs) on white squares so that <b>every</b> white square is lit. A lamp
+lights its whole row and column until a black wall stops it; lit squares turn grey. Two lamps may not shine on each
+other (they turn hollow if they do). A number on a wall says exactly how many lamps touch it (up, down, left, right).
+Tap: empty &rarr; lamp &rarr; &times; (your note: no lamp) &rarr; empty.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-akari';
+  var saved = KG.load(KEY) || {};
+  var level = saved.level || '7', g = saved.g || null, hist = [];
+
+  function rays(n, wall, p) {
+    var out = [], r = Math.floor(p / n), c = p % n, D = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (var k = 0; k < 4; k++) {
+      var rr = r + D[k][0], cc = c + D[k][1];
+      while (rr >= 0 && rr < n && cc >= 0 && cc < n && !wall[rr * n + cc]) { out.push(rr * n + cc); rr += D[k][0]; cc += D[k][1]; }
+    }
+    return out;
+  }
+  function nbs(n, p) {
+    var r = Math.floor(p / n), c = p % n, o = [];
+    if (r > 0) o.push(p - n); if (r < n - 1) o.push(p + n); if (c > 0) o.push(p - 1); if (c < n - 1) o.push(p + 1);
+    return o;
+  }
+  // Build a solution first (random walls, then lamps wherever still dark), then show some wall numbers.
+  function newGame() {
+    var n = parseInt(level, 10), wall = [], num = [], lamp = [], i, k, order = [];
+    for (i = 0; i < n * n; i++) { wall.push(Math.random() < 0.2 ? 1 : 0); num.push(-1); lamp.push(0); order.push(i); }
+    KG.shuffle(order);
+    var lit = [];
+    for (i = 0; i < n * n; i++) lit.push(0);
+    for (i = 0; i < order.length; i++) {
+      var p = order[i];
+      if (wall[p] || lit[p]) continue;
+      lamp[p] = 1; lit[p] = 1;
+      var rs = rays(n, wall, p);
+      for (k = 0; k < rs.length; k++) lit[rs[k]] = 1;
+    }
+    for (i = 0; i < n * n; i++) {
+      if (!wall[i]) continue;
+      var nb = nbs(n, i), cnt = 0;
+      for (k = 0; k < nb.length; k++) cnt += lamp[nb[k]];
+      if (Math.random() < 0.65 || cnt === 0 || cnt === 4) num[i] = cnt;
+    }
+    var cells = [];
+    for (i = 0; i < n * n; i++) cells.push(0);
+    g = { n: n, wall: wall, num: num, cells: cells, done: false };
+    hist = [];
+  }
+
+  function render() {
+    var n = g.n, lit = [], bad = {}, i, k, dark = 0, wrongNums = 0, badLamps = 0;
+    for (i = 0; i < n * n; i++) lit.push(0);
+    for (i = 0; i < n * n; i++) {
+      if (g.cells[i] !== 1) continue;
+      lit[i] = 1;
+      var rs = rays(n, g.wall, i);
+      for (k = 0; k < rs.length; k++) { lit[rs[k]] = 1; if (g.cells[rs[k]] === 1) { bad[i] = 1; badLamps++; } }
+    }
+    var numOk = {};
+    for (i = 0; i < n * n; i++) {
+      if (!g.wall[i]) { if (!lit[i]) dark++; continue; }
+      if (g.num[i] < 0) continue;
+      var nb = nbs(n, i), cnt = 0;
+      for (k = 0; k < nb.length; k++) if (g.cells[nb[k]] === 1) cnt++;
+      if (cnt === g.num[i]) numOk[i] = 1; else wrongNums++;
+    }
+    if (!dark && !badLamps && !wrongNums) g.done = true;
+    KG.text(KG.$('status'), g.done ? 'All lit — solved!' : 'Dark squares: ' + dark + (badLamps ? ' · lamps shining on each other' : '') + (wrongNums ? ' · numbers not matched: ' + wrongNums : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, (window.innerHeight || 800) - 260, 600), S = Math.floor(W / n) - 1, h = ['<table class="ak">'];
+    for (i = 0; i < n * n; i++) {
+      if (i % n === 0) h.push('<tr>');
+      if (g.wall[i]) h.push('<td class="wall' + (numOk[i] ? ' ok' : '') + '" style="width:' + S + 'px;height:' + S + 'px;font-size:' + Math.round(S * 0.55) + 'px">' + (g.num[i] >= 0 ? g.num[i] : '') + '</td>');
+      else {
+        var v = g.cells[i], inner = '';
+        if (v === 1) { var d = Math.round(S * 0.6), o = Math.round((S - d) / 2); inner = '<div class="bulb' + (bad[i] ? ' bad' : '') + '" style="left:' + o + 'px;top:' + o + 'px;width:' + d + 'px;height:' + d + 'px"></div>'; }
+        else if (v === 2) inner = '<div style="line-height:' + S + 'px;font-size:' + Math.round(S * 0.45) + 'px">&times;</div>';
+        h.push('<td data-sq="' + i + '" class="' + (lit[i] ? 'lit' : '') + '"><div class="in" style="width:' + S + 'px;height:' + S + 'px">' + inner + '</div></td>');
+      }
+      if (i % n === n - 1) h.push('</tr>');
+    }
+    h.push('</table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { level: level, g: g });
+  }
+  KG.$('board').onclick = function (e) {
+    var v = KG.attrFromEvent(e, KG.$('board'), 'data-sq');
+    if (v === null || g.done) return;
+    var p = parseInt(v, 10);
+    hist.push([p, g.cells[p]]);
+    g.cells[p] = (g.cells[p] + 1) % 3;
+    render();
+  };
+  KG.$('undoBtn').onclick = function () { if (hist.length && !g.done) { var h = hist.pop(); g.cells[h[0]] = h[1]; render(); } };
+  KG.$('clearBtn').onclick = function () { if (g.done) return; for (var i = 0; i < g.cells.length; i++) g.cells[i] = 0; hist = []; render(); };
+  KG.$('newBtn').onclick = function () { newGame(); render(); };
+  KG.buttonGroup('levels', level, function (v) { level = v; newGame(); render(); });
+  window.onresize = render;
+  if (!g || String(g.n) !== level) newGame();
+  render();
+})();
+</script>
+</body>
+</html>

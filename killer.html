@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Killer Sudoku</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .pzt { margin: 0 auto; }
+  .pzt td { font-family: Georgia, serif; }
+  .pzt .pg { font-weight: bold; }
+  .pzt .pu { font-style: italic; }
+  .npad { text-align: center; margin: 6px 0; }
+  .npad button { width: 48px; height: 48px; font-size: 22px; font-weight: bold; margin: 2px; padding: 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Killer Sudoku</span></div>
+<div class="controls" id="levels"><button data-v="e">Easy</button><button data-v="m">Medium</button><button data-v="h">Hard</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="npad" id="pad"></div>
+<div class="controls">
+  <button id="checkBtn">Check</button><button id="hintBtn">Hint</button><button id="undoBtn">Undo</button><button id="newBtn">New</button>
+</div>
+<p class="help">Like Sudoku: fill every row, column and 3&times;3 box (the shaded and plain blocks) with 1&ndash;9. The thick outlines are <b>cages</b>: the numbers in a cage must add up to the small number in its corner, and no number repeats inside a cage. Tap a square, then a number (&times; clears it). <b>Check</b> shades wrong numbers. Every puzzle has
+exactly one solution. Your puzzle is saved automatically.</p>
+<script src="common.js"></script>
+<script src="puzzle.js"></script>
+<script>
+(function () {
+  function make(level) {
+    var sol = PZ.sudokuGrid(), maxSize = level === 'e' ? 3 : (level === 'm' ? 4 : 5);
+    var cg = PZ.cages(9, maxSize, function (cage, q) {
+      for (var k = 0; k < cage.length; k++) if (sol[cage[k]] === sol[q]) return false;
+      return true;
+    });
+    var sums = [], i, k;
+    for (i = 0; i < cg.cages.length; i++) { var t = 0; for (k = 0; k < cg.cages[i].length; k++) t += sol[cg.cages[i][k]]; sums.push(t); }
+    function ok(g, p, v) {
+      var cage = cg.cages[cg.owner[p]], sum = 0, empty = 0, seen = {};
+      for (var j = 0; j < cage.length; j++) {
+        var x = g[cage[j]];
+        if (!x) { empty++; continue; }
+        if (seen[x]) return false;
+        seen[x] = 1; sum += x;
+      }
+      var target = sums[cg.owner[p]];
+      return empty ? (sum + empty <= target && sum + empty * 9 >= target) : sum === target;
+    }
+    var giv = [], start = level === 'e' ? 30 : (level === 'm' ? 16 : 6), order = [];
+    for (i = 0; i < 81; i++) { giv.push(0); order.push(i); }
+    KG.shuffle(order);
+    for (i = 0; i < start; i++) giv[order[i]] = sol[order[i]];
+    PZ.makeUnique(9, sol, giv, 3, ok, 40000);
+    var label = [];
+    for (i = 0; i < 81; i++) label.push(0);
+    for (i = 0; i < cg.cages.length; i++) { var first = 99; for (k = 0; k < cg.cages[i].length; k++) first = Math.min(first, cg.cages[i][k]); label[first] = sums[i]; }
+    return { n: 9, sol: sol, giv: giv, owner: cg.owner, label: label };
+  }
+  PZ.game({
+    key: 'kg-killer', defaultLevel: 'e', make: make,
+    cellStyle: function (pz, i) {
+      var b = Math.floor(Math.floor(i / 9) / 3) + Math.floor((i % 9) / 3);
+      return PZ.cageBorders(9, pz.owner, i) + (b % 2 ? ';background:#e4e4e4' : ';background:#fff');
+    },
+    deco: function (pz, i, S) {
+      return pz.label[i] ? '<div style="position:absolute;left:2px;top:1px;font-size:' + Math.max(9, Math.round(S * 0.24)) + 'px;line-height:1;font-style:normal;font-weight:bold">' + pz.label[i] + '</div>' : '';
+    }
+  });
+})();
+</script>
+</body>
+</html>

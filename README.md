@@ -25,6 +25,20 @@ A "Kindle Home" page of light games for the Kindle web browser (and any other e-
 - **Nhảy Quân**: Peg Solitaire, cross and French boards
 - **Đoán Chữ**: Hangman in English or Vietnamese (without accents)
 - **Đoán Mã**: Mastermind, three levels
+- **Tiến Lên**: the Southern Vietnamese card game against three computer players
+- **Bầu Cua Tôm Cá**: the Tết dice betting game
+- **Lô Tô**: Vietnamese bingo against two computer players
+- **Cờ Cá Ngựa**: Ludo for 2–4 players or against the computer
+- **Cờ Vây**: Go on 9×9 or 13×13, with a beginner computer player
+- **Cờ Cối Xay**: Nine Men's Morris
+- **Ultimate Tic-Tac-Toe**
+- **FreeCell**
+- **Lật Hình**: memory pairs, 1 or 2 players
+- **Killer Sudoku**, **KenKen**, **Futoshiki**, **Skyscrapers**: number puzzles, each with exactly one solution
+- **Star Battle** and **Akari (Light Up)**
+- **Tháp Hà Nội**: Tower of Hanoi
+- **Tìm Chữ**: word search in English or Vietnamese
+- **Tính Nhẩm**: mental maths practice
 - **Chess**: play the computer (Easy, Medium or Hard) or a friend on the same device
 - **Chinese Chess (Xiangqi)**: play the computer or a friend
 - **Ô Ăn Quan**: Vietnamese Mandarin Square Capturing, against the computer or a friend

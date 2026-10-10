@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle FreeCell</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .fc { border-collapse: separate; border-spacing: 3px; margin: 0 auto; }
+  .fc td { vertical-align: top; padding: 0; }
+  .slot { border: 2px dashed #888; border-radius: 5px; -webkit-border-radius: 5px; text-align: center; color: #888; }
+  .cd { border: 2px solid #000; border-radius: 5px; -webkit-border-radius: 5px; background: #fff; font-family: Georgia, serif; font-weight: bold; text-align: left; padding-left: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; }
+  .cd.red { background: #ddd; }
+  .cd.sel { background: #000; color: #fff; }
+  .colbase { border-top: 3px solid #000; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">FreeCell</span></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="controls"><button id="undoBtn">Undo</button><button id="autoBtn">Auto to Home</button><button id="newBtn">New Deal</button></div>
+<p class="help">FreeCell. Every card is face up. Build the four <b>home</b> piles (top right) up from Ace to King in one
+suit. In the eight columns, stack cards downwards in alternating colours (red cards are grey with hollow suits). The
+four <b>free cells</b> (top left) each hold one card. Tap a card to pick it up (with the cards below it, if they are in
+order), then tap where it goes &mdash; or tap it again to send it somewhere automatically. Almost every deal can be won.</p>
+<script src="common.js"></script>
+<script>
+(function () {
+  var KEY = 'kg-freecell', RANKS = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'], SUITS = ['&#9824;', '&#9825;', '&#9826;', '&#9827;'];
+  var saved = KG.load(KEY) || {};
+  var g = saved.g || null, hist = saved.hist || [], sel = null, msg = '';
+
+  function suit(c) { return Math.floor(c / 13); }
+  function rank(c) { return c % 13 + 1; }
+  function red(c) { return suit(c) === 1 || suit(c) === 2; }
+  function deal() {
+    var deck = [], i;
+    for (i = 0; i < 52; i++) deck.push(i);
+    KG.shuffle(deck);
+    var cols = [[], [], [], [], [], [], [], []];
+    for (i = 0; i < 52; i++) cols[i % 8].push(deck[i]);
+    g = { cols: cols, cells: [-1, -1, -1, -1], home: [0, 0, 0, 0], moves: 0 };
+    hist = []; sel = null; msg = '';
+  }
+  if (!g) deal();
+
+  function snapshot() { hist.push(JSON.stringify(g)); if (hist.length > 80) hist.shift(); }
+  function freeCells() { var n = 0; for (var i = 0; i < 4; i++) if (g.cells[i] < 0) n++; return n; }
+  function emptyCols(except) { var n = 0; for (var i = 0; i < 8; i++) if (!g.cols[i].length && i !== except) n++; return n; }
+  function inOrder(col, i) {
+    var a = g.cols[col];
+    for (var k = i + 1; k < a.length; k++) if (red(a[k]) === red(a[k - 1]) || rank(a[k]) !== rank(a[k - 1]) - 1) return false;
+    return true;
+  }
+  // Selection: { from: 'col'|'cell', i, k } where k is the card index inside a column.
+  function cardOf(s) { return s.from === 'cell' ? g.cells[s.i] : g.cols[s.i][s.k]; }
+  function count(s) { return s.from === 'cell' ? 1 : g.cols[s.i].length - s.k; }
+  function take(s) {
+    if (s.from === 'cell') { var c = g.cells[s.i]; g.cells[s.i] = -1; return [c]; }
+    return g.cols[s.i].splice(s.k, g.cols[s.i].length - s.k);
+  }
+  function toHome(s) {
+    if (count(s) !== 1) return false;
+    var c = cardOf(s);
+    if (g.home[suit(c)] !== rank(c) - 1) return false;
+    snapshot(); take(s); g.home[suit(c)]++; g.moves++; return true;
+  }
+  function toCol(s, col) {
+    if (s.from === 'col' && s.i === col) return false;
+    var c = cardOf(s), n = count(s), dest = g.cols[col];
+    if (dest.length) { var t = dest[dest.length - 1]; if (red(t) === red(c) || rank(t) !== rank(c) + 1) return false; }
+    var limit = (freeCells() + 1) * Math.pow(2, emptyCols(dest.length ? -1 : col));
+    if (n > limit) { msg = 'not enough free space to move ' + n + ' cards'; return false; }
+    snapshot();
+    var moving = take(s);
+    for (var k = 0; k < moving.length; k++) dest.push(moving[k]);
+    g.moves++; return true;
+  }
+  function toCell(s, i) {
+    if (count(s) !== 1 || g.cells[i] >= 0) return false;
+    snapshot(); g.cells[i] = take(s)[0]; g.moves++; return true;
+  }
+  function autoMove(s) {
+    if (toHome(s)) return true;
+    var i;
+    for (i = 0; i < 8; i++) if (g.cols[i].length && toCol(s, i)) return true;
+    for (i = 0; i < 8; i++) if (!g.cols[i].length && toCol(s, i)) return true;
+    if (s.from === 'col') for (i = 0; i < 4; i++) if (toCell(s, i)) return true;
+    return false;
+  }
+  function won() { return g.home[0] + g.home[1] + g.home[2] + g.home[3] === 52; }
+
+  function render() {
+    KG.text(KG.$('status'), won() ? 'You won in ' + g.moves + ' moves!' : 'Moves: ' + g.moves + (msg ? ' — ' + msg : ''));
+    var W = Math.min((window.innerWidth || 600) - 24, 720), CW = Math.floor((W - 27) / 8) - 4, fs = Math.max(13, Math.round(CW * 0.3));
+    var avail = (window.innerHeight || 800) - 330, longest = 0, i, k;
+    for (i = 0; i < 8; i++) longest = Math.max(longest, g.cols[i].length);
+    var CH = Math.max(fs + 4, Math.min(Math.round(fs * 1.7), Math.floor(avail / Math.max(1, longest)) - 2));
+    function card(c, attrs, isSel) {
+      return '<div class="cd' + (red(c) ? ' red' : '') + (isSel ? ' sel' : '') + '" ' + attrs + ' style="width:' + (CW - 7) + 'px;height:' + (CH - 4) + 'px;line-height:' + (CH - 4) + 'px;font-size:' + fs + 'px">' + RANKS[rank(c)] + SUITS[suit(c)] + '</div>';
+    }
+    function slot(attrs, txt) { return '<div class="slot" ' + attrs + ' style="width:' + (CW - 4) + 'px;height:' + Math.round(fs * 2.2) + 'px;line-height:' + Math.round(fs * 2.2) + 'px;font-size:' + fs + 'px">' + txt + '</div>'; }
+    var h = ['<table class="fc"><tr>'];
+    for (i = 0; i < 4; i++) {
+      var c = g.cells[i], isSel = sel && sel.from === 'cell' && sel.i === i;
+      h.push('<td>' + (c >= 0 ? '<div style="padding-top:' + Math.round((fs * 2.2 - CH) / 2) + 'px">' + card(c, 'data-t="cell" data-i="' + i + '"', isSel) + '</div>' : slot('data-t="cell" data-i="' + i + '"', 'free')) + '</td>');
+    }
+    for (i = 0; i < 4; i++) h.push('<td>' + slot('data-t="home" data-i="' + i + '"', g.home[i] ? '<b style="color:#000">' + RANKS[g.home[i]] + SUITS[i] + '</b>' : SUITS[i]) + '</td>');
+    h.push('</tr><tr>');
+    for (i = 0; i < 8; i++) {
+      var col = g.cols[i], cells = ['<div class="colbase" data-t="col" data-i="' + i + '" style="min-height:' + CH + 'px;padding-top:3px">'];
+      for (k = 0; k < col.length; k++) cells.push(card(col[k], 'data-t="col" data-i="' + i + '" data-k="' + k + '"', sel && sel.from === 'col' && sel.i === i && k >= sel.k));
+      cells.push('</div>');
+      h.push('<td>' + cells.join('') + '</td>');
+    }
+    h.push('</tr></table>');
+    KG.$('board').innerHTML = h.join('');
+    KG.save(KEY, { g: g, hist: hist });
+  }
+  KG.$('board').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    while (t && t !== KG.$('board') && !(t.getAttribute && t.getAttribute('data-t'))) t = t.parentNode;
+    if (!t || t === KG.$('board') || won()) { sel = null; render(); return; }
+    var kind = t.getAttribute('data-t'), i = parseInt(t.getAttribute('data-i'), 10), kAttr = t.getAttribute('data-k'), k = kAttr === null ? -1 : parseInt(kAttr, 10);
+    msg = '';
+    var same = sel && ((kind === 'cell' && sel.from === 'cell' && sel.i === i) || (kind === 'col' && sel.from === 'col' && sel.i === i && sel.k === k));
+    if (same) { if (!autoMove(sel)) msg = msg || 'no place for that card'; sel = null; render(); return; }
+    if (sel) {
+      var done = kind === 'home' ? toHome(sel) : (kind === 'cell' ? toCell(sel, i) : toCol(sel, i));
+      if (done) { sel = null; render(); return; }
+    }
+    if (kind === 'cell' && g.cells[i] >= 0) sel = { from: 'cell', i: i };
+    else if (kind === 'col' && k >= 0 && inOrder(i, k)) sel = { from: 'col', i: i, k: k };
+    else { if (sel && !msg) msg = 'that move is not allowed'; sel = null; }
+    render();
+  };
+  KG.$('undoBtn').onclick = function () { if (hist.length) { g = JSON.parse(hist.pop()); sel = null; msg = ''; render(); } };
+  KG.$('autoBtn').onclick = function () {
+    var moved = true;
+    sel = null;
+    while (moved) {
+      moved = false;
+      for (var i = 0; i < 4 && !moved; i++) if (g.cells[i] >= 0 && toHome({ from: 'cell', i: i })) moved = true;
+      for (i = 0; i < 8 && !moved; i++) if (g.cols[i].length && toHome({ from: 'col', i: i, k: g.cols[i].length - 1 })) moved = true;
+    }
+    render();
+  };
+  KG.$('newBtn').onclick = function () {
+    if (g.moves && !won() && !window.confirm('Deal a new game?')) return;
+    deal(); render();
+  };
+  window.onresize = render;
+  render();
+})();
+</script>
+</body>
+</html>

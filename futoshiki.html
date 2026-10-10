@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Kindle Futoshiki</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .pzt { margin: 0 auto; }
+  .pzt td { font-family: Georgia, serif; }
+  .pzt .pg { font-weight: bold; }
+  .pzt .pu { font-style: italic; }
+  .npad { text-align: center; margin: 6px 0; }
+  .npad button { width: 48px; height: 48px; font-size: 22px; font-weight: bold; margin: 2px; padding: 0; }
+</style>
+</head>
+<body>
+<div class="top"><a href="index.html">&larr; Home</a><span class="title">Futoshiki</span></div>
+<div class="controls" id="levels"><button data-v="4">4&times;4</button><button data-v="5">5&times;5</button><button data-v="6">6&times;6</button></div>
+<div id="status" class="status"></div>
+<div id="board"></div>
+<div class="npad" id="pad"></div>
+<div class="controls">
+  <button id="checkBtn">Check</button><button id="hintBtn">Hint</button><button id="undoBtn">Undo</button><button id="newBtn">New</button>
+</div>
+<p class="help">Fill the grid so every row and column contains each number once. The signs between squares must be true: &lt; and &gt; across, and ^ (top is smaller) or v (top is bigger) up and down. Tap a square, then a number (&times; clears it). <b>Check</b> shades wrong numbers. Every puzzle has
+exactly one solution. Your puzzle is saved automatically.</p>
+<script src="common.js"></script>
+<script src="puzzle.js"></script>
+<script>
+(function () {
+  function make(level) {
+    var n = parseInt(level, 10), sol = PZ.latin(n), pairs = [], used = [], i;
+    for (i = 0; i < n * n; i++) {
+      if (i % n < n - 1) pairs.push([i, i + 1]);
+      if (Math.floor(i / n) < n - 1) pairs.push([i, i + n]);
+    }
+    KG.shuffle(pairs);
+    var take = Math.round(pairs.length * 0.3);
+    for (i = 0; i < take; i++) used.push(pairs.pop());
+    function ok(g, p) {
+      for (var j = 0; j < used.length; j++) {
+        var a = used[j][0], b = used[j][1];
+        if ((a === p || b === p) && g[a] && g[b] && (g[a] < g[b]) !== (sol[a] < sol[b])) return false;
+      }
+      return true;
+    }
+    var giv = [];
+    for (i = 0; i < n * n; i++) giv.push(0);
+    // Add signs (or, rarely, a given number) until the answer is unique.
+    while (PZ.solve(n, giv, 0, ok, 2, null, 60000) !== 1) {
+      if (pairs.length && Math.random() < 0.75) used.push(pairs.pop());
+      else { var free = []; for (i = 0; i < n * n; i++) if (!giv[i]) free.push(i); var p = free[Math.floor(Math.random() * free.length)]; giv[p] = sol[p]; }
+    }
+    var right = [], down = [];
+    for (i = 0; i < n * n; i++) { right.push(''); down.push(''); }
+    for (i = 0; i < used.length; i++) {
+      var a = used[i][0], b = used[i][1];
+      if (b === a + 1) right[a] = sol[a] < sol[b] ? '&lt;' : '&gt;';
+      else down[a] = sol[a] < sol[b] ? '^' : 'v';
+    }
+    return { n: n, sol: sol, giv: giv, right: right, down: down };
+  }
+  PZ.game({
+    key: 'kg-futoshiki', defaultLevel: '4', make: make, spacing: 18,
+    deco: function (pz, i, S) {
+      var h = '', f = Math.round(S * 0.4);
+      if (pz.right[i]) h += '<div style="position:absolute;left:' + (S + 2) + 'px;top:0;width:18px;line-height:' + S + 'px;text-align:center;font-size:' + f + 'px;font-weight:bold;font-style:normal">' + pz.right[i] + '</div>';
+      if (pz.down[i]) h += '<div style="position:absolute;left:0;top:' + (S + 1) + 'px;width:' + S + 'px;line-height:18px;text-align:center;font-size:' + f + 'px;font-weight:bold;font-style:normal">' + pz.down[i] + '</div>';
+      return h;
+    }
+  });
+})();
+</script>
+</body>
+</html>
